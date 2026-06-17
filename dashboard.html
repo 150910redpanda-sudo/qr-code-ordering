@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Kitchen — TableTap</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Mono:wght@700&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"></script>
+<style>
+:root {
+  --bg:      #0A0A0A;
+  --surf:    #141414;
+  --card:    #1C1C1C;
+  --bd:      rgba(255,255,255,.07);
+  --bd-str:  rgba(255,255,255,.13);
+  --text:    #F2F2F7;
+  --muted:   rgba(242,242,247,.42);
+  --green:   #22C55E;
+  --amber:   #F59E0B;
+  --blue:    #3B82F6;
+  --green-b: rgba(34,197,94,.12);
+  --amber-b: rgba(245,158,11,.12);
+  --blue-b:  rgba(59,130,246,.12);
+}
+*  { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Header ──────────────────────────────────────── */
+.dh {
+  height: 58px;
+  background: var(--surf);
+  border-bottom: 1px solid var(--bd);
+  display: flex;
+  align-items: center;
+  padding: 0 18px;
+  gap: 14px;
+  flex-shrink: 0;
+}
+.dh-logo {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--muted);
+  text-decoration: none;
+  letter-spacing: -.01em;
+  flex-shrink: 0;
+  transition: color .15s;
+}
+.dh-logo:hover { color: var(--text); }
+.dh-sep { width: 1px; height: 18px; background: var(--bd-str); flex-shrink: 0; }
+.dh-rname {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.dh-stats { display: flex; gap: 18px; align-items: center; flex-shrink: 0; }
+.dh-stat { text-align: right; }
+.dh-stat-n {
+  font-family: 'Space Mono', monospace;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+}
+.dh-stat-l {
+  font-size: 10px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  margin-top: 2px;
+}
+.live-wrap { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.live-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--green);
+  animation: livePulse 2.5s ease-in-out infinite;
+}
+@keyframes livePulse {
+  0%,100% { opacity: 1; box-shadow: 0 0 0 0 rgba(34,197,94,.5); }
+  50%      { opacity: .7; box-shadow: 0 0 0 4px rgba(34,197,94,0); }
+}
+.live-lbl {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  color: var(--green);
+  text-transform: uppercase;
+}
+.sound-btn {
+  background: transparent;
+  border: 1px solid var(--bd-str);
+  color: var(--muted);
+  padding: 5px 11px;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  transition: .15s;
+  flex-shrink: 0;
+}
+.sound-btn:hover { color: var(--text); border-color: rgba(255,255,255,.3); }
+.sound-btn.on { color: var(--green); border-color: rgba(34,197,94,.4); background: rgba(34,197,94,.06); }
+
+/* ── Mobile tabs ──────────────────────────────────── */
+.mob-tabs {
+  display: none;
+  background: var(--surf);
+  border-bottom: 1px solid var(--bd);
+  flex-shrink: 0;
+}
+.mob-tab {
+  flex: 1; padding: 10px 8px;
+  text-align: center;
+  font-size: 11px; font-weight: 700;
+  letter-spacing: .07em; text-transform: uppercase;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  font-family: inherit;
+  transition: .15s;
+}
+.mob-tab.active { color: var(--text); border-bottom-color: var(--text); }
+
+/* ── Columns ──────────────────────────────────────── */
+.dash-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+.dash-col {
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--bd);
+  overflow: hidden;
+}
+.dash-col:last-child { border-right: 0; }
+.col-head {
+  padding: 13px 16px 12px;
+  border-bottom: 1px solid var(--bd);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  background: var(--surf);
+}
+.col-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.col-head h2 {
+  font-size: 11px; font-weight: 700;
+  letter-spacing: .09em; text-transform: uppercase;
+  color: var(--muted);
+}
+.col-badge {
+  margin-left: auto;
+  font-size: 11px; font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.06);
+  color: var(--muted);
+  font-family: 'Space Mono', monospace;
+  transition: .2s;
+}
+.col-badge.lit { background: var(--accent-bg); color: var(--accent); }
+.col-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.col-body::-webkit-scrollbar { width: 4px; }
+.col-body::-webkit-scrollbar-track { background: transparent; }
+.col-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,.1); border-radius: 2px; }
+.col-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  padding: 40px 24px;
+  color: var(--muted);
+  text-align: center;
+  gap: 8px;
+}
+.col-empty-icon { font-size: 28px; opacity: .35; }
+.col-empty p { font-size: 13px; line-height: 1.5; }
+
+/* ── Order cards ──────────────────────────────────── */
+.ocard {
+  background: var(--card);
+  border-radius: 11px;
+  border: 1px solid var(--bd);
+  overflow: hidden;
+  animation: cardIn .22s ease both;
+}
+@keyframes cardIn {
+  from { opacity: 0; transform: translateY(-10px) scale(.97); }
+  to   { opacity: 1; transform: none; }
+}
+.ocard.removing {
+  animation: cardOut .18s ease forwards;
+  pointer-events: none;
+}
+@keyframes cardOut {
+  to { opacity: 0; transform: scale(.94); max-height: 0; margin: 0; padding: 0; }
+}
+.ocard.flash { animation: cardIn .22s ease both, cardFlash .8s .1s ease both; }
+@keyframes cardFlash {
+  0%  { border-color: var(--green); box-shadow: 0 0 0 3px rgba(34,197,94,.25); }
+  70% { border-color: var(--green); box-shadow: 0 0 0 6px rgba(34,197,94,.0); }
+  100%{ border-color: var(--bd);    box-shadow: none; }
+}
+.ocard-top {
+  padding: 12px 14px 10px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--bd);
+}
+.ocard-table { font-size: 17px; font-weight: 700; letter-spacing: -.02em; line-height: 1; }
+.ocard-time  { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.ocard-body  { padding: 10px 14px; }
+.ocard-item  {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.65;
+  color: rgba(242,242,247,.8);
+}
+.ocard-item-name  { flex: 1; }
+.ocard-item-price { color: var(--muted); white-space: nowrap; font-size: 12px; }
+.ocard-note {
+  margin-top: 7px;
+  font-size: 12px;
+  color: rgba(242,242,247,.55);
+  font-style: italic;
+  padding: 6px 9px;
+  background: rgba(255,255,255,.03);
+  border-radius: 6px;
+  border-left: 2px solid rgba(255,255,255,.1);
+}
+.ocard-foot {
+  padding: 10px 14px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-top: 1px solid var(--bd);
+}
+.ocard-total { font-family: 'Space Mono', monospace; font-size: 13px; font-weight: 700; }
+.ocard-btn {
+  border: 0;
+  border-radius: 7px;
+  padding: 7px 13px;
+  font-size: 12px; font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: .15s;
+  white-space: nowrap;
+}
+.btn-new   { background: var(--green-b); color: var(--green); }
+.btn-new:hover   { background: var(--green);  color: #fff; }
+.btn-prep  { background: var(--amber-b); color: var(--amber); }
+.btn-prep:hover  { background: var(--amber);  color: #fff; }
+.btn-ready { background: var(--blue-b);  color: var(--blue);  }
+.btn-ready:hover { background: var(--blue);   color: #fff; }
+
+/* Per-column accent variable inheritance */
+#col-new  { --accent: var(--green); --accent-bg: var(--green-b); }
+#col-prep { --accent: var(--amber); --accent-bg: var(--amber-b); }
+#col-ready{ --accent: var(--blue);  --accent-bg: var(--blue-b);  }
+
+/* ── Setup prompt ─────────────────────────────────── */
+#setupPrompt {
+  position: fixed; inset: 0;
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 12px;
+  text-align: center;
+  padding: 32px;
+  z-index: 100;
+}
+#setupPrompt .sp-icon { font-size: 48px; margin-bottom: 4px; }
+#setupPrompt h2 { font-size: 26px; font-weight: 700; letter-spacing: -.02em; }
+#setupPrompt p  { color: var(--muted); max-width: 300px; line-height: 1.6; font-size: 15px; }
+.sp-btn {
+  display: inline-block;
+  background: var(--green);
+  color: #fff;
+  border: 0;
+  border-radius: 11px;
+  padding: 14px 28px;
+  font-size: 15px; font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  text-decoration: none;
+  margin-top: 8px;
+  transition: .15s;
+}
+.sp-btn:hover { background: #16a34a; }
+
+/* ── Last-updated ticker ──────────────────────────── */
+.dh-ticker {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+  display: none;
+}
+
+/* ── Responsive ───────────────────────────────────── */
+@media (max-width: 720px) {
+  html, body { overflow: auto; }
+  .dh-stats  { display: none; }
+  .dh-ticker { display: none !important; }
+  .dh-rname  { font-size: 14px; }
+  .mob-tabs  { display: flex; }
+  .dash-cols { grid-template-columns: 1fr; flex: none; }
+  .dash-col  { border-right: 0; border-bottom: 1px solid var(--bd); min-height: 60vh; }
+  .dash-col.mob-hidden { display: none; }
+}
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<header class="dh">
+  <a href="/" class="dh-logo">TableTap</a>
+  <div class="dh-sep"></div>
+  <span class="dh-rname" id="dRname">Kitchen</span>
+  <div class="dh-stats">
+    <div class="dh-stat">
+      <div class="dh-stat-n" id="statOrders">—</div>
+      <div class="dh-stat-l">Today</div>
+    </div>
+    <div class="dh-stat">
+      <div class="dh-stat-n" id="statRevenue">—</div>
+      <div class="dh-stat-l">Revenue</div>
+    </div>
+  </div>
+  <span class="dh-ticker" id="dhTicker"></span>
+  <div class="live-wrap">
+    <div class="live-dot"></div>
+    <span class="live-lbl">Live</span>
+  </div>
+  <button class="sound-btn on" id="soundBtn" onclick="toggleSound()" title="Toggle notification sounds">🔔 Sound</button>
+</header>
+
+<!-- Mobile column tabs -->
+<div class="mob-tabs" id="mobTabs">
+  <button class="mob-tab active" onclick="showTab('new',this)">New <span id="mt-new"></span></button>
+  <button class="mob-tab" onclick="showTab('prep',this)">Preparing <span id="mt-prep"></span></button>
+  <button class="mob-tab" onclick="showTab('ready',this)">Ready <span id="mt-ready"></span></button>
+</div>
+
+<!-- Setup prompt (shown if no restaurant ID) -->
+<div id="setupPrompt" style="display:none">
+  <div class="sp-icon">🍽️</div>
+  <h2>Set up your restaurant first</h2>
+  <p>Create your menu and we'll give you a permanent kitchen dashboard link.</p>
+  <a href="/restaurant" class="sp-btn">Set up my restaurant →</a>
+</div>
+
+<!-- Three-column kanban -->
+<div class="dash-cols">
+  <div class="dash-col" id="col-new">
+    <div class="col-head">
+      <div class="col-dot" style="background:var(--green)"></div>
+      <h2>New orders</h2>
+      <div class="col-badge" id="cnt-new">0</div>
+    </div>
+    <div class="col-body" id="cards-new">
+      <div class="col-empty" id="empty-new">
+        <div class="col-empty-icon">⏳</div>
+        <p>Orders will appear here<br>as customers place them.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="dash-col" id="col-prep">
+    <div class="col-head">
+      <div class="col-dot" style="background:var(--amber)"></div>
+      <h2>Preparing</h2>
+      <div class="col-badge" id="cnt-prep">0</div>
+    </div>
+    <div class="col-body" id="cards-prep">
+      <div class="col-empty" id="empty-prep">
+        <div class="col-empty-icon">👨‍🍳</div>
+        <p>Orders you're working on<br>will appear here.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="dash-col" id="col-ready">
+    <div class="col-head">
+      <div class="col-dot" style="background:var(--blue)"></div>
+      <h2>Ready to serve</h2>
+      <div class="col-badge" id="cnt-ready">0</div>
+    </div>
+    <div class="col-body" id="cards-ready">
+      <div class="col-empty" id="empty-ready">
+        <div class="col-empty-icon">✅</div>
+        <p>Finished orders<br>waiting for collection.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   State
+   ============================================================ */
+var state = {
+  restaurantId:   '',
+  restaurantName: '',
+  currency:       '£',
+  soundOn:        true
+};
+
+var isFirstPoll = true;
+var seenOrderIds = new Set();
+var activeMobTab = 'new';
+
+/* ============================================================
+   Init
+   ============================================================ */
+window.addEventListener('DOMContentLoaded', function () {
+  var urlId = new URLSearchParams(window.location.search).get('id');
+  if (urlId) {
+    localStorage.setItem('tt-restaurant-id', urlId);
+    history.replaceState(null, '', '/dashboard');
+  }
+
+  state.restaurantId = localStorage.getItem('tt-restaurant-id') || '';
+  state.soundOn      = localStorage.getItem('tt-sound') !== 'off';
+  updateSoundBtn();
+
+  if (!state.restaurantId) {
+    document.getElementById('setupPrompt').style.display = 'flex';
+    return;
+  }
+
+  loadRestaurantName();
+  poll();
+  setInterval(poll, 3500);
+  setInterval(updateTimes, 30000);
+});
+
+function loadRestaurantName() {
+  fetch('/api/get-restaurant?id=' + encodeURIComponent(state.restaurantId))
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (!d.payload) return;
+      try {
+        var json    = LZString.decompressFromEncodedURIComponent(d.payload);
+        var payload = JSON.parse(json);
+        state.restaurantName = payload.r || 'My Restaurant';
+        state.currency       = payload.c || '£';
+        document.getElementById('dRname').textContent = state.restaurantName;
+        document.title = state.restaurantName + ' · Kitchen';
+      } catch (e) {}
+    })
+    .catch(function () {});
+}
+
+/* ============================================================
+   Polling
+   ============================================================ */
+async function poll() {
+  try {
+    var res  = await fetch('/api/get-orders?restaurantId=' + encodeURIComponent(state.restaurantId));
+    var data = await res.json();
+    var orders = data.orders || [];
+
+    var hasNewAlert = false;
+    orders.forEach(function (o) {
+      if (!seenOrderIds.has(o.id)) {
+        seenOrderIds.add(o.id);
+        if (!isFirstPoll && o.status === 'new') hasNewAlert = true;
+      }
+    });
+
+    if (hasNewAlert && state.soundOn) playBeep();
+    isFirstPoll = false;
+
+    render(orders);
+    updateStats(orders);
+    updateTicker();
+  } catch (e) {}
+}
+
+/* ============================================================
+   Render
+   ============================================================ */
+function render(orders) {
+  var byStatus = { new: [], preparing: [], ready: [] };
+  orders.forEach(function (o) {
+    if (o.status === 'done') return;
+    if (byStatus[o.status]) byStatus[o.status].push(o);
+  });
+  ['new', 'preparing', 'ready'].forEach(function (s) {
+    byStatus[s].sort(function (a, b) { return a.createdAt - b.createdAt; });
+  });
+
+  renderCol('new',     byStatus.new,       'cnt-new',  'empty-new');
+  renderCol('prep',    byStatus.preparing, 'cnt-prep', 'empty-prep');
+  renderCol('ready',   byStatus.ready,     'cnt-ready','empty-ready');
+}
+
+function renderCol(colId, orders, badgeId, emptyId) {
+  var body  = document.getElementById('cards-' + colId);
+  var badge = document.getElementById(badgeId);
+  var empty = document.getElementById(emptyId);
+  if (!body) return;
+
+  /* Badge */
+  if (badge) {
+    badge.textContent = orders.length;
+    badge.classList.toggle('lit', orders.length > 0);
+  }
+
+  /* Determine which status string maps to this column */
+  var statusMap = { new: 'new', prep: 'preparing', ready: 'ready' };
+  var colStatus = statusMap[colId];
+
+  /* Remove cards no longer belonging here */
+  Array.from(body.querySelectorAll('.ocard[data-id]')).forEach(function (el) {
+    var id  = el.dataset.id;
+    var has = orders.find(function (o) { return o.id === id; });
+    if (!has) {
+      el.classList.add('removing');
+      setTimeout(function () { if (el.parentNode) el.remove(); }, 200);
+    }
+  });
+
+  /* Add / update cards */
+  orders.forEach(function (o, i) {
+    var existing = body.querySelector('.ocard[data-id="' + o.id + '"]');
+    if (existing) {
+      /* Update time-ago in existing card */
+      var timeEl = existing.querySelector('.ocard-time');
+      if (timeEl) timeEl.textContent = timeAgo(o.createdAt);
+    } else {
+      var isNew = false;
+      /* Flash animation only for truly new cards that appear AFTER first load */
+      if (!isFirstPoll && seenOrderIds.has(o.id) && o.status === 'new') isNew = true;
+      var card   = makeCard(o, isNew);
+      /* Insert at correct position (sorted oldest-first) */
+      var sibling = body.querySelectorAll('.ocard[data-id]')[i] || empty || null;
+      body.insertBefore(card, sibling);
+    }
+  });
+
+  /* Show/hide empty state */
+  if (empty) empty.style.display = orders.length ? 'none' : 'flex';
+
+  /* Mobile tab badge */
+  var mtEl = document.getElementById('mt-' + colId);
+  if (mtEl) mtEl.textContent = orders.length ? '(' + orders.length + ')' : '';
+}
+
+function makeCard(order, flash) {
+  var card = document.createElement('div');
+  card.className = 'ocard' + (flash ? ' flash' : '');
+  card.dataset.id = order.id;
+
+  var tableLabel = order.table ? 'Table ' + order.table : 'Walk-in';
+  var currency   = order.currency || state.currency || '£';
+
+  var itemsHTML = (order.items || []).map(function (it) {
+    var price = (it.price != null && it.price > 0)
+      ? '<span class="ocard-item-price">' + currency + (it.price * it.qty).toFixed(2) + '</span>'
+      : '';
+    return '<div class="ocard-item"><span class="ocard-item-name">' + it.qty + '× ' + esc(it.name) + '</span>' + price + '</div>';
+  }).join('');
+
+  var noteHTML = order.note
+    ? '<div class="ocard-note">' + esc(order.note) + '</div>'
+    : '';
+
+  var total = (order.total || 0);
+  var totalStr = total > 0 ? currency + total.toFixed(2) : '';
+
+  var btnClass, btnText, nextStatus;
+  if (order.status === 'new') {
+    btnClass = 'ocard-btn btn-new'; btnText = 'Start preparing →'; nextStatus = 'preparing';
+  } else if (order.status === 'preparing') {
+    btnClass = 'ocard-btn btn-prep'; btnText = 'Mark ready ✓'; nextStatus = 'ready';
+  } else {
+    btnClass = 'ocard-btn btn-ready'; btnText = 'Collected ✓'; nextStatus = 'done';
+  }
+
+  card.innerHTML =
+    '<div class="ocard-top">'
+    +   '<div><div class="ocard-table">' + esc(tableLabel) + '</div></div>'
+    +   '<div class="ocard-time">' + timeAgo(order.createdAt) + '</div>'
+    + '</div>'
+    + '<div class="ocard-body">' + itemsHTML + noteHTML + '</div>'
+    + '<div class="ocard-foot">'
+    +   (totalStr ? '<span class="ocard-total">' + totalStr + '</span>' : '<span></span>')
+    +   '<button class="' + btnClass + '">' + btnText + '</button>'
+    + '</div>';
+
+  card.querySelector('.ocard-btn').addEventListener('click', function () {
+    advanceOrder(order.id, nextStatus, card);
+  });
+
+  return card;
+}
+
+/* ============================================================
+   Advance order status
+   ============================================================ */
+async function advanceOrder(orderId, nextStatus, cardEl) {
+  if (cardEl) {
+    var btn = cardEl.querySelector('.ocard-btn');
+    if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  }
+  try {
+    await fetch('/api/update-order', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        restaurantId: state.restaurantId,
+        orderId:      orderId,
+        status:       nextStatus
+      })
+    });
+    poll();
+  } catch (e) {
+    if (cardEl) {
+      var btn2 = cardEl.querySelector('.ocard-btn');
+      if (btn2) { btn2.disabled = false; btn2.textContent = 'Retry'; }
+    }
+  }
+}
+
+/* ============================================================
+   Stats
+   ============================================================ */
+function updateStats(orders) {
+  var todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+  var ts   = todayStart.getTime();
+  var today = orders.filter(function (o) { return o.createdAt >= ts; });
+  var rev   = today.reduce(function (s, o) { return s + (o.total || 0); }, 0);
+  var cur   = today.length ? (today[0].currency || state.currency || '£') : '£';
+
+  var elO = document.getElementById('statOrders');
+  var elR = document.getElementById('statRevenue');
+  if (elO) elO.textContent = today.length;
+  if (elR) elR.textContent = rev > 0 ? cur + rev.toFixed(2) : cur + '0.00';
+}
+
+/* ============================================================
+   Sound
+   ============================================================ */
+function playBeep() {
+  try {
+    var ctx = new (window.AudioContext || window.webkitAudioContext)();
+    [0, 0.18].forEach(function (delay) {
+      var osc  = ctx.createOscillator();
+      var gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.frequency.value = 880; osc.type = 'sine';
+      gain.gain.setValueAtTime(0, ctx.currentTime + delay);
+      gain.gain.linearRampToValueAtTime(0.18, ctx.currentTime + delay + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + 0.24);
+      osc.start(ctx.currentTime + delay);
+      osc.stop(ctx.currentTime + delay + 0.25);
+    });
+  } catch (e) {}
+}
+
+function toggleSound() {
+  state.soundOn = !state.soundOn;
+  localStorage.setItem('tt-sound', state.soundOn ? 'on' : 'off');
+  updateSoundBtn();
+}
+
+function updateSoundBtn() {
+  var btn = document.getElementById('soundBtn');
+  if (!btn) return;
+  btn.classList.toggle('on', state.soundOn);
+  btn.textContent = state.soundOn ? '🔔 Sound' : '🔕 Sound';
+}
+
+/* ============================================================
+   Mobile tabs
+   ============================================================ */
+function showTab(tab, btnEl) {
+  activeMobTab = tab;
+  var colMap = { new: 'new', prep: 'prep', ready: 'ready' };
+  ['new', 'prep', 'ready'].forEach(function (c) {
+    var col = document.getElementById('col-' + c);
+    if (col) col.classList.toggle('mob-hidden', c !== tab);
+  });
+  document.querySelectorAll('.mob-tab').forEach(function (b) { b.classList.remove('active'); });
+  if (btnEl) btnEl.classList.add('active');
+}
+
+/* ============================================================
+   Utilities
+   ============================================================ */
+function timeAgo(ts) {
+  var d = Date.now() - ts;
+  if (d < 60000)   return 'just now';
+  if (d < 3600000) return Math.floor(d / 60000) + ' min ago';
+  return Math.floor(d / 3600000) + 'h ago';
+}
+
+function updateTimes() {
+  document.querySelectorAll('.ocard[data-id]').forEach(function (card) {
+    /* We don't store createdAt in DOM — just re-render will handle it */
+  });
+}
+
+function updateTicker() {
+  var el = document.getElementById('dhTicker');
+  if (el) {
+    el.style.display = 'block';
+    el.textContent   = 'Updated ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+}
+
+function esc(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+</script>
+</body>
+</html>

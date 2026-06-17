@@ -14,19 +14,71 @@ body { padding-top: var(--nav); padding-bottom: 80px; }
 
 #nav-rname { font-size: 13px; color: var(--muted); margin-left: 4px; }
 
-/* Loading / error screens */
 .load-wrap { text-align: center; padding: 80px 24px; }
 .load-wrap h2 { font-size: 22px; margin: 16px 0 8px; }
 .load-wrap p  { color: var(--muted); font-size: 15px; max-width: 320px; margin: 0 auto; }
 .spin-lg { width: 36px; height: 36px; border-width: 3px; }
 
-/* Confirmation screen */
-.conf-icon { font-size: 56px; line-height: 1; margin-bottom: 16px; }
-.conf-h    { font-size: 22px; margin-bottom: 8px; }
-
-/* Sending state */
 .finish-wrap { margin-top: 14px; }
 .finish-note { font-size: 13px; color: var(--muted); text-align: center; margin-top: 10px; line-height: 1.5; }
+
+/* ── Order status tracker ── */
+.st-track {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 0 2px;
+}
+.st-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+}
+.st-dot {
+  width: 34px; height: 34px;
+  border-radius: 50%;
+  border: 2px solid #E4E4E7;
+  background: #F9FAFB;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: #A1A1AA;
+  transition: all .4s ease;
+}
+.st-lbl {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: #A1A1AA;
+  white-space: nowrap;
+  transition: color .4s;
+}
+.st-conn {
+  flex: 1;
+  height: 2px;
+  background: #E4E4E7;
+  min-width: 28px;
+  max-width: 60px;
+  margin-bottom: 20px;
+  transition: background .4s;
+}
+.st-done .st-dot { background: #22C55E; border-color: #22C55E; color: #fff; }
+.st-done .st-lbl { color: #22C55E; }
+.st-active .st-dot { border-color: #22C55E; color: #22C55E; background: #fff; animation: dotPulse 1.8s ease-in-out infinite; }
+.st-active .st-lbl { color: #22C55E; }
+.st-conn.done { background: #22C55E; }
+.st-rd .st-dot { background: #3B82F6; border-color: #3B82F6; color: #fff; }
+.st-rd .st-lbl { color: #3B82F6; }
+.st-no-track { display: none; }
+@keyframes dotPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(34,197,94,.4); }
+  50%       { box-shadow: 0 0 0 6px rgba(34,197,94,0); }
+}
 </style>
 </head>
 <body>
@@ -93,18 +145,41 @@ body { padding-top: var(--nav); padding-bottom: 80px; }
     <div class="finish-wrap">
       <button class="btn btn-p btn-w btn-lg" id="finishBtn" onclick="finishOrder()">Finish order</button>
       <p id="sendStat" class="stat"></p>
-      <p class="finish-note">Your order is sent directly to the kitchen by text message.</p>
+      <p class="finish-note">Your order goes straight to the kitchen.</p>
     </div>
     <button class="btn btn-g btn-w mt" onclick="goStep('c-menu')">← Add more items</button>
   </div>
 
-  <!-- Sent -->
+  <!-- Sent / Tracking -->
   <div id="c-sent" class="hidden">
-    <div class="card center" style="padding:40px 24px">
-      <div style="font-size:52px;line-height:1;margin-bottom:18px">✅</div>
-      <h2 style="font-size:22px;margin-bottom:8px">Order received!</h2>
-      <p class="note" style="max-width:280px;margin:0 auto 24px">Your order has been sent straight to the kitchen. Sit back — they've got it.</p>
-      <div id="sentTicket" class="ticket" style="text-align:left;margin-bottom:24px"></div>
+    <div class="card" style="padding:32px 20px">
+
+      <div style="text-align:center;margin-bottom:24px">
+        <div id="confIcon" style="font-size:52px;line-height:1;margin-bottom:14px">✅</div>
+        <h2 style="font-size:22px;letter-spacing:-.02em;margin-bottom:6px">Order received!</h2>
+        <p id="confSub" class="note" style="max-width:260px;margin:0 auto">The kitchen has your order — sit tight.</p>
+      </div>
+
+      <!-- Live status tracker (hidden until orderId available) -->
+      <div id="statusTrack" class="st-track st-no-track">
+        <div class="st-step st-done" id="st-recv">
+          <div class="st-dot">✓</div>
+          <div class="st-lbl">Received</div>
+        </div>
+        <div class="st-conn" id="sc-1"></div>
+        <div class="st-step" id="st-prep">
+          <div class="st-dot">2</div>
+          <div class="st-lbl">Preparing</div>
+        </div>
+        <div class="st-conn" id="sc-2"></div>
+        <div class="st-step" id="st-ready">
+          <div class="st-dot">3</div>
+          <div class="st-lbl">Ready</div>
+        </div>
+      </div>
+      <p id="statusNote" class="note" style="text-align:center;margin-top:12px;min-height:18px;font-size:13px"></p>
+
+      <div id="sentTicket" class="ticket" style="margin:22px 0 20px"></div>
       <button class="btn btn-p btn-w" onclick="resetOrder()">Order something else</button>
     </div>
   </div>
@@ -115,7 +190,16 @@ body { padding-top: var(--nav); padding-bottom: 80px; }
 /* ============================================================
    State
    ============================================================ */
-var state = { restaurant:'', phone:'', currency:'£', menu:[], cart:{}, lastOrderText:'' };
+var state = {
+  restaurant:   '',
+  phone:        '',
+  currency:     '£',
+  menu:         [],
+  cart:         {},
+  lastOrderText:'',
+  restaurantId: '',
+  orderId:      null
+};
 var $ = function(id){ return document.getElementById(id); };
 function money(n){ return state.currency+(Number(n)||0).toFixed(2); }
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
@@ -130,19 +214,19 @@ function goStep(id){
 }
 
 /* ============================================================
-   Load menu from server on page load
+   Load menu from server
    ============================================================ */
 window.addEventListener('DOMContentLoaded', async function(){
-  /* Extract restaurant ID from URL path: /menu/<id> */
   var parts = window.location.pathname.split('/').filter(Boolean);
-  var id = parts[parts.length - 1];
+  var id    = parts[parts.length - 1];
 
   if (!id || id === 'menu') {
     $('errMsg').textContent = 'No restaurant was specified in this link.';
     goStep('c-error'); return;
   }
 
-  /* Pre-fill table number from ?table=N (set by per-table QR codes) */
+  state.restaurantId = id;
+
   var tableParam = new URLSearchParams(window.location.search).get('table');
 
   try {
@@ -280,26 +364,52 @@ async function finishOrder(){
   if(cartCount()<=0){ alert('Your order is empty.'); return; }
   var btn=$('finishBtn'), ss=$('sendStat');
   if(ss) ss.innerHTML='';
-
-  if(!state.phone){
-    state.lastOrderText=buildOrderText();
-    if(ss) ss.innerHTML='<span class="err">This restaurant hasn\'t added a phone number. Copy your order and send it manually.</span>'
-      +'<br><button class="btn btn-g btn-sm" style="margin-top:8px" onclick="copyFallback()">Copy order text</button>';
-    return;
-  }
-
   if(btn){ btn.disabled=true; btn.innerHTML='<span class="spin" style="width:15px;height:15px;border-width:2.5px"></span> Sending…'; }
-  state.lastOrderText=buildOrderText();
+
+  state.lastOrderText = buildOrderText();
+
+  /* Build structured order data for dashboard */
+  var tableVal = $('tableNo') ? $('tableNo').value.trim() : '';
+  var noteVal  = $('kNote')   ? $('kNote').value.trim()   : '';
+  var orderItems = Object.keys(state.cart).map(function(k){
+    var it=state.menu[k], q=state.cart[k];
+    return { name:it.name, qty:q, price:it.price };
+  });
+  var orderData = {
+    table:    tableVal || null,
+    note:     noteVal  || null,
+    items:    orderItems,
+    total:    cartTotal(),
+    currency: state.currency
+  };
+
+  var payload = { body: state.lastOrderText, orderData: orderData };
+  if(state.phone)        payload.to           = state.phone;
+  if(state.restaurantId) payload.restaurantId = state.restaurantId;
 
   try{
-    var res=await fetch('/api/send-order',{
+    var res  = await fetch('/api/send-order',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({to:state.phone, body:state.lastOrderText})
+      body:JSON.stringify(payload)
     });
-    var data=await res.json();
-    if(!res.ok) throw new Error(data.error||'Could not send the order.');
-    $('sentTicket').innerHTML=buildTicketHTML(true);
+    var data = await res.json();
+
+    /* If SMS failed but orderId came back, order is still in dashboard — accept it */
+    if(!res.ok && !data.orderId){
+      throw new Error(data.error || 'Could not send the order.');
+    }
+
+    /* Show confirmation */
+    $('sentTicket').innerHTML = buildTicketHTML(true);
+
+    /* Start live tracking if order was saved to dashboard */
+    if(data.orderId && state.restaurantId){
+      state.orderId = data.orderId;
+      $('statusTrack').classList.remove('st-no-track');
+      startStatusPolling(state.restaurantId, data.orderId);
+    }
+
     goStep('c-sent');
   }catch(e){
     if(ss) ss.innerHTML='<span class="err">'+esc(String(e.message))+'</span>'
@@ -316,11 +426,68 @@ function copyFallback(){
   });
 }
 
+/* ============================================================
+   Order status polling
+   ============================================================ */
+var _pollTimer = null;
+
+function startStatusPolling(restaurantId, orderId){
+  if(_pollTimer){ clearInterval(_pollTimer); _pollTimer=null; }
+  function check(){
+    fetch('/api/order-status?restaurantId='+encodeURIComponent(restaurantId)+'&orderId='+encodeURIComponent(orderId))
+      .then(function(r){ return r.json(); })
+      .then(function(d){ updateStatusUI(d.status || 'new'); })
+      .catch(function(){});
+  }
+  check();
+  _pollTimer = setInterval(check, 6000);
+}
+
+function updateStatusUI(status){
+  var stPrep  = $('st-prep'),  stReady  = $('st-ready');
+  var sc1     = $('sc-1'),     sc2      = $('sc-2');
+  var note    = $('statusNote'), icon   = $('confIcon');
+
+  if(status === 'preparing' || status === 'ready' || status === 'done'){
+    if(stPrep)  stPrep.className  = 'st-step st-done';
+    if(sc1)     sc1.classList.add('done');
+    if(stReady) stReady.className = 'st-step st-active';
+    if(note && status === 'preparing') note.textContent = 'The kitchen is working on it…';
+  }
+  if(status === 'ready' || status === 'done'){
+    if(stReady) stReady.className = 'st-step st-rd';
+    if(sc2)     sc2.classList.add('done');
+    if(icon)    icon.textContent  = '🍽️';
+    if(note)    note.innerHTML    = '<strong>Your order is ready!</strong> Head to the counter or wait for your server.';
+    stopTracking();
+  }
+  if(status === 'done'){
+    if(note) note.textContent = 'Collected — enjoy your meal! 🙌';
+  }
+}
+
+function stopTracking(){
+  if(_pollTimer){ clearInterval(_pollTimer); _pollTimer=null; }
+}
+
+/* ============================================================
+   Reset
+   ============================================================ */
 function resetOrder(){
-  state.cart={};
+  stopTracking();
+  state.cart={}; state.orderId=null;
   var tn=$('tableNo'); if(tn) tn.value='';
   var kn=$('kNote');   if(kn) kn.value='';
   var ss=$('sendStat'); if(ss) ss.innerHTML='';
+  /* Reset tracker UI */
+  var st=$('statusTrack');
+  if(st) st.classList.add('st-no-track');
+  var sp=$('st-prep'); if(sp) sp.className='st-step';
+  var sr=$('st-ready'); if(sr) sr.className='st-step';
+  var s1=$('sc-1'); if(s1) s1.classList.remove('done');
+  var s2=$('sc-2'); if(s2) s2.classList.remove('done');
+  var ic=$('confIcon'); if(ic) ic.textContent='✅';
+  var no=$('statusNote'); if(no) no.textContent='';
   renderMenuList(); updateCartBar(); goStep('c-menu');
 }
 </script>

@@ -165,6 +165,68 @@ body { padding-bottom: 0; }
 .cta-banner h2 { font-size: clamp(28px,4vw,46px); margin-bottom: 14px; max-width: 560px; margin-left: auto; margin-right: auto; }
 .cta-banner p  { color: var(--muted); font-size: 16px; margin-bottom: 36px; }
 
+/* Dashboard showcase section */
+.dash-split {
+  display: grid;
+  grid-template-columns: 1fr 1.15fr;
+  gap: 64px;
+  align-items: center;
+}
+.dash-copy .s-eye { text-align: left; }
+.dash-copy h2  { text-align: left; font-size: clamp(26px,3.2vw,38px); margin-bottom: 16px; }
+.dash-copy p   { color: var(--muted); font-size: 15.5px; line-height: 1.68; margin-bottom: 20px; }
+.dash-feats    { list-style: none; display: flex; flex-direction: column; gap: 9px; font-size: 14.5px; color: var(--ink-2); }
+.dash-feats li { display: flex; align-items: flex-start; gap: 8px; }
+.dash-feats .chk { color: var(--green); font-weight: 700; flex-shrink: 0; }
+
+/* Dashboard CSS mockup */
+.dp-shell {
+  background: #0A0A0A;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.09);
+  box-shadow: 0 28px 80px rgba(0,0,0,.3), 0 0 0 1px rgba(255,255,255,.04);
+  font-family: 'Inter', sans-serif;
+}
+.dp-header {
+  background: #141414;
+  border-bottom: 1px solid rgba(255,255,255,.07);
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.dp-logo  { color: rgba(242,242,247,.28); font-weight: 700; font-size: 11px; }
+.dp-rname { color: #F2F2F7; font-weight: 700; font-size: 12px; flex: 1; }
+.dp-live  { display: flex; align-items: center; gap: 5px; }
+.dp-live-dot { width: 5px; height: 5px; border-radius: 50%; background: #22C55E; animation: livePulse 2.5s ease-in-out infinite; }
+@keyframes livePulse { 0%,100%{opacity:1} 50%{opacity:.5} }
+.dp-live-lbl { font-size: 9px; font-weight: 700; color: #22C55E; text-transform: uppercase; letter-spacing: .08em; }
+.dp-cols { display: grid; grid-template-columns: 1fr 1fr 1fr; }
+.dp-col  { border-right: 1px solid rgba(255,255,255,.07); padding: 10px 8px; }
+.dp-col:last-child { border-right: 0; }
+.dp-col-h { font-size: 9px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; margin-bottom: 8px; padding: 0 2px; }
+.dp-card {
+  background: #1C1C1C;
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: 7px;
+  padding: 8px 9px;
+  margin-bottom: 6px;
+  color: rgba(242,242,247,.7);
+}
+.dp-card.flash-card { border-color: rgba(34,197,94,.4); box-shadow: 0 0 0 1px rgba(34,197,94,.15); }
+.dp-card-top { display: flex; justify-content: space-between; margin-bottom: 4px; }
+.dp-card-top strong { color: #F2F2F7; font-size: 11px; }
+.dp-ago { color: rgba(242,242,247,.3); font-size: 9px; }
+.dp-card-item { font-size: 9.5px; color: rgba(242,242,247,.58); line-height: 1.65; }
+.dp-card-btn  { margin-top: 7px; padding: 4px 7px; border-radius: 5px; font-size: 9px; font-weight: 700; text-align: center; }
+.dp-btn-new   { background: rgba(34,197,94,.14);  color: #22C55E; }
+.dp-btn-prep  { background: rgba(245,158,11,.14); color: #F59E0B; }
+.dp-btn-ready { background: rgba(59,130,246,.14);  color: #3B82F6; }
+
+@media (max-width: 860px) {
+  .dash-split { grid-template-columns: 1fr; gap: 40px; }
+}
 @media (max-width: 860px) {
   .hero-inner { grid-template-columns: 1fr; }
   .hero-visual { display: none; }
@@ -191,10 +253,11 @@ body { padding-bottom: 0; }
       <li><a href="#how">How it works</a></li>
       <li><a href="#features">Features</a></li>
       <li><a href="#pricing">Pricing</a></li>
+      <li><a href="/dashboard">Kitchen ↗</a></li>
     </ul>
     <div class="nav-actions">
-      <a href="restaurant.html" class="btn btn-g btn-sm">For restaurants</a>
-      <a href="order.html"      class="btn btn-p btn-sm">Order food →</a>
+      <a href="restaurant.html" class="btn btn-g btn-sm">Set up restaurant</a>
+      <a href="restaurant.html" class="btn btn-p btn-sm">Get started →</a>
     </div>
   </div>
 </nav>
@@ -206,7 +269,7 @@ body { padding-bottom: 0; }
       <div>
         <div class="hero-eyebrow">✦ Free while we're getting started</div>
         <h1>Your menu on every table. <em>Orders to your phone.</em></h1>
-        <p class="hero-sub">Take a photo of your printed menu and we'll turn it into a QR code in minutes. Customers scan, tap what they want, and the order lands straight in your WhatsApp — no app to download, no tablet to buy, no monthly contract.</p>
+        <p class="hero-sub">Take a photo of your printed menu and we'll turn it into a QR code in minutes. Customers scan, tap their order, and you see it live on your kitchen dashboard — no app, no tablet, no monthly contract.</p>
         <div class="hero-actions">
           <a href="restaurant.html" class="btn btn-p btn-lg">Set up my restaurant →</a>
           <a href="order.html"      class="btn btn-g btn-lg">I'm ordering food</a>
@@ -280,9 +343,9 @@ body { padding-bottom: 0; }
       </div>
       <div class="step-card">
         <div class="step-num">STEP 04</div>
-        <div class="step-icon">💬</div>
-        <h3>Orders arrive by message</h3>
-        <p>When a customer orders, you get a WhatsApp or text with their table number and the full itemised bill.</p>
+        <div class="step-icon">📊</div>
+        <h3>Watch orders roll in live</h3>
+        <p>Your kitchen dashboard updates the moment customers order. Move tickets through New → Preparing → Ready with a single tap.</p>
       </div>
     </div>
     <div id="hiw-c" class="steps-grid hidden fade-up" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr))">
@@ -299,7 +362,7 @@ body { padding-bottom: 0; }
       <div class="step-card">
         <div class="step-icon">🚀</div>
         <h3>Send to the kitchen</h3>
-        <p>Tap send and your order goes straight to the restaurant via WhatsApp or SMS. Done.</p>
+        <p>Tap send and your order goes straight to the restaurant. Then watch it move from Received → Preparing → Ready, live on your screen.</p>
       </div>
     </div>
   </div>
@@ -315,9 +378,72 @@ body { padding-bottom: 0; }
       <div class="feat-card fade-up"><span class="feat-icon">📷</span><h3>Photo your menu, we do the rest</h3><p>Point your phone at your printed menu and we'll pull out every item, price and section — no typing required.</p></div>
       <div class="feat-card fade-up"><span class="feat-icon">📶</span><h3>No signal? Still works.</h3><p>A built-in reading engine runs entirely on your device — no internet connection needed.</p></div>
       <div class="feat-card fade-up"><span class="feat-icon">📱</span><h3>Nothing to download</h3><p>Customers order straight from their browser. No app, no account, no friction.</p></div>
-      <div class="feat-card fade-up"><span class="feat-icon">🔒</span><h3>Your data stays yours</h3><p>Your menu lives inside the QR code. We never see it, store it, or touch it.</p></div>
-      <div class="feat-card fade-up"><span class="feat-icon">💬</span><h3>Orders to your phone</h3><p>Each order arrives as a WhatsApp or text message. No new hardware, no dashboard to watch.</p></div>
+      <div class="feat-card fade-up"><span class="feat-icon">📊</span><h3>Live kitchen dashboard</h3><p>Every order appears on screen the moment it's placed. Sound alerts, status columns, and daily stats — on any device, no installation.</p></div>
+      <div class="feat-card fade-up"><span class="feat-icon">🔄</span><h3>Customers track their order</h3><p>A live status screen shows Received → Preparing → Ready. Customers stop flagging your staff to ask where their food is.</p></div>
       <div class="feat-card fade-up"><span class="feat-icon">🌍</span><h3>Works anywhere in the world</h3><p>Set prices in pounds, dollars, euros, or whatever your local currency is.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== DASHBOARD SHOWCASE ===== -->
+<section class="mkt-section" id="dashboard">
+  <div class="container">
+    <div class="dash-split">
+      <div class="dash-copy">
+        <p class="s-eye">For the kitchen</p>
+        <h2>Every order, the moment it's placed.</h2>
+        <p>No more shouting across the kitchen or missing a ticket. Orders appear on your dashboard the instant a customer taps send — with a notification sound so you never miss one.</p>
+        <ul class="dash-feats">
+          <li><span class="chk">✓</span> Live updates, no page refresh needed</li>
+          <li><span class="chk">✓</span> Sound alert for every new ticket</li>
+          <li><span class="chk">✓</span> One tap: New → Preparing → Ready</li>
+          <li><span class="chk">✓</span> Daily orders and revenue at a glance</li>
+          <li><span class="chk">✓</span> Works on any screen — phone, tablet, old laptop</li>
+        </ul>
+        <a href="/dashboard" class="btn btn-p" style="display:inline-flex;margin-top:28px">Open kitchen dashboard →</a>
+      </div>
+      <div class="dash-preview">
+        <div class="dp-shell">
+          <div class="dp-header">
+            <span class="dp-logo">TableTap</span>
+            <span class="dp-rname">The Corner Café</span>
+            <span class="dp-live"><span class="dp-live-dot"></span><span class="dp-live-lbl">Live</span></span>
+          </div>
+          <div class="dp-cols">
+            <div class="dp-col">
+              <div class="dp-col-h" style="color:#22C55E">New (2)</div>
+              <div class="dp-card flash-card">
+                <div class="dp-card-top"><strong>Table 4</strong><span class="dp-ago">just now</span></div>
+                <div class="dp-card-item">1× Margherita Pizza · £9.50</div>
+                <div class="dp-card-item">2× House Wine · £12.00</div>
+                <div class="dp-card-btn dp-btn-new">Start preparing →</div>
+              </div>
+              <div class="dp-card">
+                <div class="dp-card-top"><strong>Table 9</strong><span class="dp-ago">2 min ago</span></div>
+                <div class="dp-card-item">3× Fish &amp; Chips · £42.00</div>
+                <div class="dp-card-btn dp-btn-new">Start preparing →</div>
+              </div>
+            </div>
+            <div class="dp-col">
+              <div class="dp-col-h" style="color:#F59E0B">Preparing (1)</div>
+              <div class="dp-card">
+                <div class="dp-card-top"><strong>Table 7</strong><span class="dp-ago">6 min ago</span></div>
+                <div class="dp-card-item">2× Pasta Carbonara · £24.00</div>
+                <div class="dp-card-item">1× Tiramisu · £5.50</div>
+                <div class="dp-card-btn dp-btn-prep">Mark ready ✓</div>
+              </div>
+            </div>
+            <div class="dp-col">
+              <div class="dp-col-h" style="color:#3B82F6">Ready (1)</div>
+              <div class="dp-card">
+                <div class="dp-card-top"><strong>Table 2</strong><span class="dp-ago">9 min ago</span></div>
+                <div class="dp-card-item">2× Caesar Salad · £17.00</div>
+                <div class="dp-card-btn dp-btn-ready">Collected ✓</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </section>
@@ -325,8 +451,8 @@ body { padding-bottom: 0; }
 <!-- ===== PROOF ===== -->
 <div class="proof">
   <div class="container">
-    <blockquote>"The easiest upgrade we've made all year — took 4 minutes to set up."</blockquote>
-    <cite>A restaurant owner, South London</cite>
+    <blockquote>"Set up in 4 minutes. The kitchen dashboard is the thing — everyone can see orders without being called over."</blockquote>
+    <cite>Restaurant owner, South London</cite>
   </div>
 </div>
 
@@ -345,9 +471,9 @@ body { padding-bottom: 0; }
           <li><span class="p-chk">✓</span> Unlimited QR codes</li>
           <li><span class="p-chk">✓</span> AI menu reading (Claude)</li>
           <li><span class="p-chk">✓</span> On-device OCR (offline)</li>
-          <li><span class="p-chk">✓</span> WhatsApp &amp; SMS ordering</li>
+          <li><span class="p-chk">✓</span> Live kitchen dashboard</li>
+          <li><span class="p-chk">✓</span> Customer order tracking</li>
           <li><span class="p-chk">✓</span> Up to 40 menu items</li>
-          <li><span class="p-chk">✓</span> Manual menu editor</li>
         </ul>
         <a href="restaurant.html" class="btn btn-p btn-w">Get started free →</a>
       </div>
@@ -373,9 +499,12 @@ body { padding-bottom: 0; }
 <!-- ===== CTA BANNER ===== -->
 <section class="cta-banner mkt-section alt">
   <div class="container">
-    <h2>Ready when you are.<br>Free to try, free to keep.</h2>
-    <p>No credit card, no account, no commitment. Just take a photo of your menu and you're done.</p>
-    <a href="restaurant.html" class="btn btn-p btn-lg">Set up my restaurant →</a>
+    <h2>Your restaurant is one photo away<br>from running smoother.</h2>
+    <p>No credit card, no account, no contract. Take a photo of your menu and you're up and running in minutes.</p>
+    <div style="display:flex;flex-wrap:wrap;gap:12px;justify-content:center">
+      <a href="restaurant.html" class="btn btn-p btn-lg">Set up my restaurant →</a>
+      <a href="/dashboard"      class="btn btn-g btn-lg">Open kitchen dashboard</a>
+    </div>
   </div>
 </section>
 
@@ -384,22 +513,23 @@ body { padding-bottom: 0; }
   <div class="footer-inner">
     <div class="footer-brand">
       <div class="fl">Table<span class="tap">Tap</span></div>
-      <p>AI-powered QR ordering for restaurants</p>
+      <p>QR ordering and live kitchen management for independent restaurants</p>
     </div>
     <div class="footer-links">
       <h4>Product</h4>
       <a href="#how">How it works</a>
       <a href="#features">Features</a>
+      <a href="#dashboard">Kitchen dashboard</a>
       <a href="#pricing">Pricing</a>
     </div>
     <div class="footer-links">
       <h4>Get started</h4>
-      <a href="restaurant.html">For restaurants</a>
-      <a href="order.html">Order food</a>
+      <a href="restaurant.html">Set up restaurant</a>
+      <a href="/dashboard">Kitchen dashboard</a>
     </div>
     <div class="footer-bottom">
       <span>© 2025 TableTap</span>
-      <span>Menu data lives in the QR — no servers, no databases.</span>
+      <span>Built for independent restaurants who don't have time for complicated software.</span>
     </div>
   </div>
 </footer>
