@@ -308,15 +308,31 @@ function syncUpload(){
 
 function onFile(e){
   var f=e.target.files[0]; if(!f) return;
+  var isPng  = f.type==='image/png';
+  var isJpeg = f.type==='image/jpeg'||f.type==='image/jpg';
   var reader=new FileReader();
   reader.onload=function(){
     var img=new Image();
     img.onload=function(){
-      var max=1500, w=img.width, h=img.height;
+      var w=img.width, h=img.height, max=2400;
+
+      /* If image fits within max and is a native browser format,
+         send the original bytes — no re-encoding, no quality loss. */
+      if(Math.max(w,h)<=max && (isPng||isJpeg)){
+        state.imgB64=reader.result.split(',')[1];
+        state.imgType=f.type;
+        $('prev').innerHTML='<img src="'+reader.result+'" alt="Menu preview"/>';
+        $('prev').classList.remove('hidden');
+        syncUpload(); return;
+      }
+
+      /* Needs resizing — scale down to max dimension */
       if(Math.max(w,h)>max){ var s=max/Math.max(w,h); w=Math.round(w*s); h=Math.round(h*s); }
       var c=$('work'); c.width=w; c.height=h;
       c.getContext('2d').drawImage(img,0,0,w,h);
-      var url=c.toDataURL('image/jpeg',0.82);
+
+      /* JPEG at 0.95 — visually lossless, compact enough for Tesseract */
+      var url=c.toDataURL('image/jpeg',0.95);
       state.imgB64=url.split(',')[1]; state.imgType='image/jpeg';
       $('prev').innerHTML='<img src="'+url+'" alt="Menu preview"/>';
       $('prev').classList.remove('hidden');
@@ -528,6 +544,9 @@ async function makeQR(){
 
   $('qrName').textContent=payload.r;
   var f=$('orderUrlField'); if(f) f.value=orderUrl;
+  /* Update dashboard link to include restaurant ID so it works on any device */
+  var dl=$('dashLink');
+  if(dl && _restaurantId) dl.href='/dashboard?id='+encodeURIComponent(_restaurantId);
   $('tableQRsWrap').classList.add('hidden');
   var box=$('qrbox'); box.innerHTML='';
   try{

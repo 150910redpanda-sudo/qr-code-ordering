@@ -6,8 +6,10 @@ export default async function handler(req, res) {
   const kvToken = process.env.KV_REST_API_TOKEN;
   if (!kvUrl || !kvToken) return res.status(503).json({ error: 'Storage not configured' });
 
+  const kvBase = kvUrl.replace(/\/$/, '');
+
   /* LRANGE orders list */
-  const listRes  = await fetch(kvUrl, {
+  const listRes  = await fetch(kvBase, {
     method: 'POST',
     headers: { 'Authorization': 'Bearer ' + kvToken, 'Content-Type': 'application/json' },
     body: JSON.stringify(['LRANGE', 'orders:' + restaurantId, 0, 99])
@@ -22,7 +24,7 @@ export default async function handler(req, res) {
 
   /* Pipeline GET each order */
   const pipeline = orderIds.map(id => ['GET', 'order:' + restaurantId + ':' + id]);
-  const pipeRes  = await fetch(kvUrl + '/pipeline', {
+  const pipeRes  = await fetch(kvBase + '/pipeline', {
     method: 'POST',
     headers: { 'Authorization': 'Bearer ' + kvToken, 'Content-Type': 'application/json' },
     body: JSON.stringify(pipeline)

@@ -442,7 +442,7 @@ var state = {
   soundOn:        true
 };
 
-var isFirstPoll = true;
+var hasLoadedInitially = false;
 var seenOrderIds = new Set();
 var activeMobTab = 'new';
 
@@ -468,7 +468,6 @@ window.addEventListener('DOMContentLoaded', function () {
   loadRestaurantName();
   poll();
   setInterval(poll, 3500);
-  setInterval(updateTimes, 30000);
 });
 
 function loadRestaurantName() {
@@ -501,16 +500,16 @@ async function poll() {
     orders.forEach(function (o) {
       if (!seenOrderIds.has(o.id)) {
         seenOrderIds.add(o.id);
-        if (!isFirstPoll && o.status === 'new') hasNewAlert = true;
+        if (hasLoadedInitially && o.status === 'new') hasNewAlert = true;
       }
     });
 
     if (hasNewAlert && state.soundOn) playBeep();
-    isFirstPoll = false;
 
     render(orders);
     updateStats(orders);
     updateTicker();
+    hasLoadedInitially = true;
   } catch (e) {}
 }
 
@@ -544,10 +543,6 @@ function renderCol(colId, orders, badgeId, emptyId) {
     badge.classList.toggle('lit', orders.length > 0);
   }
 
-  /* Determine which status string maps to this column */
-  var statusMap = { new: 'new', prep: 'preparing', ready: 'ready' };
-  var colStatus = statusMap[colId];
-
   /* Remove cards no longer belonging here */
   Array.from(body.querySelectorAll('.ocard[data-id]')).forEach(function (el) {
     var id  = el.dataset.id;
@@ -566,10 +561,9 @@ function renderCol(colId, orders, badgeId, emptyId) {
       var timeEl = existing.querySelector('.ocard-time');
       if (timeEl) timeEl.textContent = timeAgo(o.createdAt);
     } else {
-      var isNew = false;
-      /* Flash animation only for truly new cards that appear AFTER first load */
-      if (!isFirstPoll && seenOrderIds.has(o.id) && o.status === 'new') isNew = true;
-      var card   = makeCard(o, isNew);
+      /* Flash only for cards arriving AFTER the initial load */
+      var isNew = hasLoadedInitially && o.status === 'new';
+      var card  = makeCard(o, isNew);
       /* Insert at correct position (sorted oldest-first) */
       var sibling = body.querySelectorAll('.ocard[data-id]')[i] || empty || null;
       body.insertBefore(card, sibling);
@@ -731,12 +725,6 @@ function timeAgo(ts) {
   if (d < 60000)   return 'just now';
   if (d < 3600000) return Math.floor(d / 60000) + ' min ago';
   return Math.floor(d / 3600000) + 'h ago';
-}
-
-function updateTimes() {
-  document.querySelectorAll('.ocard[data-id]').forEach(function (card) {
-    /* We don't store createdAt in DOM — just re-render will handle it */
-  });
 }
 
 function updateTicker() {

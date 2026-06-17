@@ -11,8 +11,9 @@ export default async function handler(req, res) {
   const from    = process.env.TWILIO_FROM_NUMBER;
 
   /* 1 — Save order to KV (best-effort, independent of SMS) */
+  const kvBase = kvUrl ? kvUrl.replace(/\/$/, '') : '';
   let orderId = null;
-  if (restaurantId && orderData && kvUrl && kvToken) {
+  if (restaurantId && orderData && kvBase && kvToken) {
     try {
       orderId = 'ord-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
       const order = {
@@ -23,7 +24,7 @@ export default async function handler(req, res) {
         createdAt: Date.now(),
         updatedAt: Date.now()
       };
-      await fetch(kvUrl + '/pipeline', {
+      await fetch(kvBase + '/pipeline', {
         method: 'POST',
         headers: { 'Authorization': 'Bearer ' + kvToken, 'Content-Type': 'application/json' },
         body: JSON.stringify([
