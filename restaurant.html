@@ -314,11 +314,24 @@ function onFile(e){
   reader.onload=function(){
     var img=new Image();
     img.onload=function(){
-      var w=img.width, h=img.height, max=3600;
+      var w=img.width, h=img.height;
+      /* Cap width and height independently (not by a single "longest side"
+         rule) — a tall, narrow full-page screenshot would otherwise get its
+         width crushed down to nothing while chasing the height cap, leaving
+         text unreadable. */
+      var maxW=3600, maxH=7800;
+      var ratio=Math.max(w/h, h/w);
+      $('ssWarn') && $('ssWarn').remove();
+      if(ratio>3.5){
+        var warn=document.createElement('p');
+        warn.id='ssWarn'; warn.className='stat';
+        warn.innerHTML='<span class="err">That looks like a full-page screenshot — it\'s very long and thin, which can make text too small to read after upload. For best results, screenshot just the visible part of the menu (or a section at a time) instead of the whole scrolling page.</span>';
+        $('drop').insertAdjacentElement('afterend', warn);
+      }
 
-      /* If image fits within max and is a native browser format,
+      /* If image already fits within caps and is a native browser format,
          send the original bytes — no re-encoding, no quality loss. */
-      if(Math.max(w,h)<=max && (isPng||isJpeg)){
+      if(w<=maxW && h<=maxH && (isPng||isJpeg)){
         state.imgB64=reader.result.split(',')[1];
         state.imgType=f.type;
         $('prev').innerHTML='<img src="'+reader.result+'" alt="Menu preview"/>';
@@ -326,8 +339,9 @@ function onFile(e){
         syncUpload(); return;
       }
 
-      /* Needs resizing — scale down to max dimension */
-      if(Math.max(w,h)>max){ var s=max/Math.max(w,h); w=Math.round(w*s); h=Math.round(h*s); }
+      /* Needs resizing — scale down so both dimensions fit their own cap */
+      var s=Math.min(maxW/w, maxH/h, 1);
+      w=Math.round(w*s); h=Math.round(h*s);
       var c=$('work'); c.width=w; c.height=h;
       c.getContext('2d').drawImage(img,0,0,w,h);
 
