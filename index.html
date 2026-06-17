@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<meta name="description" content="TableTap turns a photo of your printed menu into a QR ordering system in minutes. No app, no hardware — customers scan and order instantly from their phone."/>
+<meta property="og:title" content="TableTap — QR table ordering for restaurants"/>
+<meta property="og:description" content="Turn your printed menu into a QR ordering system in minutes. AI-powered, no hardware needed."/>
+<meta property="og:type" content="website"/>
+<meta name="theme-color" content="#2A6B47"/>
+<title>TableTap — QR ordering for restaurants</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,400;1,700&family=Inter:wght@400;500;600&family=Space+Mono:wght@700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<style>
+/* ---- Page-specific ---- */
+body { padding-bottom: 0; }
+
+/* Hero */
+.hero {
+  min-height: 100svh;
+  padding: calc(var(--nav) + 80px) 0 80px;
+  display: flex; align-items: center;
+  background:
+    radial-gradient(ellipse 70% 55% at 75% 45%, rgba(42,107,71,.07) 0%, transparent 70%),
+    radial-gradient(ellipse 55% 45% at 25% 65%, rgba(212,137,58,.05) 0%, transparent 65%),
+    var(--bg);
+  overflow: hidden; position: relative;
+}
+.hero-inner {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 48px;
+  align-items: center;
+}
+.hero-eyebrow {
+  display: inline-flex; align-items: center; gap: 7px;
+  background: var(--green-lt); color: var(--green-dk);
+  font-size: 13px; font-weight: 600; padding: 5px 14px;
+  border-radius: 999px; border: 1px solid rgba(42,107,71,.2);
+  margin-bottom: 22px;
+}
+.hero h1 {
+  font-size: clamp(38px,5.5vw,66px);
+  letter-spacing: -.03em; margin-bottom: 20px;
+  line-height: 1.06;
+}
+.hero h1 em { font-style: normal; color: var(--green); }
+.hero-sub {
+  font-size: clamp(15px,1.8vw,17.5px);
+  color: var(--muted); line-height: 1.65; margin-bottom: 36px;
+  max-width: 420px;
+}
+.hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 28px; }
+.hero-trust { display: flex; flex-wrap: wrap; gap: 6px 18px; }
+.hero-trust span { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 5px; }
+.hero-trust .chk { color: var(--green); }
+
+/* Phone mockup */
+.hero-visual { display: flex; justify-content: center; align-items: center; }
+.mockup { position: relative; width: 240px; }
+.mock-phone {
+  width: 220px; height: 440px; background: #1A1916;
+  border-radius: 36px; padding: 10px;
+  box-shadow: 0 0 0 1px rgba(255,255,255,.05), inset 0 0 0 1px rgba(255,255,255,.08), var(--sh-lg);
+  margin: 0 auto;
+}
+.mock-screen {
+  width: 100%; height: 100%;
+  background: var(--bg); border-radius: 27px; overflow: hidden;
+  display: flex; flex-direction: column;
+}
+.ms-top { background: var(--surface); padding: 10px 11px 8px; border-bottom: 1px solid var(--bd); display: flex; align-items: center; gap: 6px; }
+.ms-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
+.ms-rname { font-family: 'Playfair Display', Georgia, serif; font-size: 10px; font-weight: 700; }
+.ms-sub { font-size: 7px; color: var(--muted); margin-top: 1px; }
+.ms-body { flex: 1; padding: 4px 8px 60px; overflow: hidden; }
+.ms-sec { font-size: 7px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--green); margin: 8px 0 5px; }
+.ms-item { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; border-bottom: 1px solid var(--bd); gap: 4px; }
+.ms-item-nm { font-size: 8px; font-weight: 600; }
+.ms-item-pr { font-size: 7px; color: var(--muted); margin-top: 1px; }
+.ms-add  { font-size: 7px; font-weight: 700; border: 1px solid var(--green); color: var(--green); border-radius: 999px; padding: 2px 7px; white-space: nowrap; }
+.ms-stepper { font-size: 8px; font-weight: 700; border: 1px solid var(--bd-str); border-radius: 999px; padding: 2px 6px; }
+.ms-cart {
+  position: absolute; bottom: 18px; left: 18px; right: 18px;
+  background: var(--green); color: #fff;
+  font-size: 8px; font-weight: 700; border-radius: 999px;
+  padding: 7px 10px; text-align: center;
+}
+.mock-badge {
+  position: absolute; top: -14px; right: -24px;
+  background: var(--surface); border: 1px solid var(--bd);
+  border-radius: 12px; padding: 10px 14px;
+  display: flex; align-items: center; gap: 8px;
+  box-shadow: var(--sh); font-size: 12.5px; font-weight: 600;
+  animation: badge-float 3s ease-in-out infinite;
+}
+@keyframes badge-float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+.mock-qr-badge {
+  position: absolute; bottom: 10px; left: -28px;
+  background: var(--surface); border: 1px solid var(--bd);
+  border-radius: 12px; padding: 10px 14px;
+  box-shadow: var(--sh); font-size: 11px; color: var(--muted);
+  animation: badge-float 3.5s ease-in-out infinite .5s;
+}
+.mock-qr-badge strong { display: block; color: var(--ink); font-size: 12px; margin-bottom: 2px; }
+
+/* Section chrome */
+.mkt-section { padding: 100px 0; }
+.mkt-section.alt { background: var(--surface); }
+.s-eye {
+  text-align: center; font-size: 12.5px; font-weight: 700;
+  letter-spacing: .12em; text-transform: uppercase;
+  color: var(--green); margin-bottom: 10px;
+}
+.s-title { text-align: center; font-size: clamp(26px,3.5vw,40px); margin-bottom: 10px; }
+.s-sub { text-align: center; color: var(--muted); font-size: 15.5px; max-width: 480px; margin: 0 auto 56px; line-height: 1.65; }
+
+/* How-it-works tabs */
+.hiw-tabs { display: flex; justify-content: center; margin-bottom: 48px; background: var(--surface); border: 1px solid var(--bd); border-radius: 999px; padding: 4px; width: fit-content; margin-left: auto; margin-right: auto; }
+.hiw-tab { border: 0; background: transparent; font-family: inherit; font-size: 14px; font-weight: 600; color: var(--muted); padding: 9px 22px; border-radius: 999px; cursor: pointer; transition: .18s; }
+.hiw-tab.on { background: var(--ink); color: #fff; }
+
+/* Steps grid */
+.steps-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(210px,1fr)); gap: 20px; }
+.step-card { background: var(--surface); border: 1px solid var(--bd); border-radius: 18px; padding: 28px 24px; }
+.step-num { font-family: 'Space Mono',monospace; font-size: 11px; font-weight: 700; letter-spacing: .06em; color: var(--muted); margin-bottom: 14px; }
+.step-icon { font-size: 32px; margin-bottom: 14px; line-height: 1; }
+.step-card h3 { font-size: 17px; letter-spacing: -.01em; margin-bottom: 8px; }
+.step-card p { font-size: 14px; color: var(--muted); line-height: 1.6; }
+
+/* Features grid */
+.feat-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(240px,1fr)); gap: 18px; }
+.feat-card { background: var(--bg); border: 1px solid var(--bd); border-radius: 16px; padding: 24px; transition: box-shadow .2s, border-color .2s; }
+.feat-card:hover { box-shadow: var(--sh); border-color: var(--bd-md); }
+.feat-icon { font-size: 28px; margin-bottom: 12px; display: block; }
+.feat-card h3 { font-size: 16px; letter-spacing: -.01em; margin-bottom: 6px; }
+.feat-card p { font-size: 14px; color: var(--muted); line-height: 1.6; }
+
+/* Proof strip */
+.proof { background: var(--green); padding: 64px 0; text-align: center; color: #fff; }
+.proof blockquote { font-family: 'Playfair Display',Georgia,serif; font-size: clamp(20px,3vw,28px); font-weight: 700; font-style: italic; letter-spacing: 0; max-width: 600px; margin: 0 auto 12px; line-height: 1.45; }
+.proof cite { font-size: 14px; opacity: .65; font-style: normal; }
+
+/* Pricing */
+.pricing-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(280px,1fr)); gap: 20px; max-width: 680px; margin: 0 auto; }
+.p-card { background: var(--surface); border: 1px solid var(--bd); border-radius: 20px; padding: 32px 28px; }
+.p-card.featured { background: var(--ink); color: #fff; border-color: var(--ink); }
+.p-card.featured .p-sub { color: rgba(255,255,255,.5); }
+.p-card.featured .p-list li { color: rgba(255,255,255,.8); }
+.p-badge { display: inline-block; background: rgba(255,255,255,.15); color: rgba(255,255,255,.8); font-size: 11.5px; font-weight: 600; padding: 3px 10px; border-radius: 999px; margin-bottom: 16px; }
+.p-label { font-size: 14px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
+.p-card.featured .p-label { color: rgba(255,255,255,.55); }
+.p-price { font-family: 'Playfair Display',Georgia,serif; font-weight: 700; font-size: 52px; letter-spacing: -.02em; line-height: 1; }
+.p-per { font-size: 14px; color: var(--muted); margin: 4px 0 24px; }
+.p-card.featured .p-per { color: rgba(255,255,255,.5); }
+.p-list { list-style: none; margin-bottom: 28px; display: flex; flex-direction: column; gap: 10px; }
+.p-list li { font-size: 14.5px; color: var(--ink-2); display: flex; align-items: flex-start; gap: 9px; }
+.p-chk { color: var(--green); font-weight: 700; flex-shrink: 0; }
+.p-card.featured .p-chk { color: #6EE89B; }
+
+/* CTA banner */
+.cta-banner { padding: 100px 0; text-align: center; }
+.cta-banner h2 { font-size: clamp(28px,4vw,46px); margin-bottom: 14px; max-width: 560px; margin-left: auto; margin-right: auto; }
+.cta-banner p  { color: var(--muted); font-size: 16px; margin-bottom: 36px; }
+
+@media (max-width: 860px) {
+  .hero-inner { grid-template-columns: 1fr; }
+  .hero-visual { display: none; }
+  .hero { min-height: auto; padding-bottom: 60px; }
+}
+@media (max-width: 560px) {
+  .mkt-section { padding: 72px 0; }
+  .steps-grid { grid-template-columns: 1fr; }
+  .hero-actions { flex-direction: column; }
+  .hero-actions .btn { justify-content: center; }
+}
+</style>
+</head>
+<body>
+
+<!-- ===== NAV ===== -->
+<nav class="site-nav">
+  <div class="nav-inner">
+    <a href="/" class="nav-logo">
+      <span class="nav-dot"></span>
+      <span class="nav-wordmark">Table<span class="tap">Tap</span></span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="#how">How it works</a></li>
+      <li><a href="#features">Features</a></li>
+      <li><a href="#pricing">Pricing</a></li>
+    </ul>
+    <div class="nav-actions">
+      <a href="restaurant.html" class="btn btn-g btn-sm">For restaurants</a>
+      <a href="order.html"      class="btn btn-p btn-sm">Order food →</a>
+    </div>
+  </div>
+</nav>
+
+<!-- ===== HERO ===== -->
+<section class="hero">
+  <div class="container">
+    <div class="hero-inner">
+      <div>
+        <div class="hero-eyebrow">✦ Free while we're getting started</div>
+        <h1>Your menu on every table. <em>Orders to your phone.</em></h1>
+        <p class="hero-sub">Take a photo of your printed menu and we'll turn it into a QR code in minutes. Customers scan, tap what they want, and the order lands straight in your WhatsApp — no app to download, no tablet to buy, no monthly contract.</p>
+        <div class="hero-actions">
+          <a href="restaurant.html" class="btn btn-p btn-lg">Set up my restaurant →</a>
+          <a href="order.html"      class="btn btn-g btn-lg">I'm ordering food</a>
+        </div>
+        <div class="hero-trust">
+          <span><span class="chk">✓</span> No app needed</span>
+          <span><span class="chk">✓</span> No hardware</span>
+          <span><span class="chk">✓</span> Works on any phone</span>
+          <span><span class="chk">✓</span> Free to start</span>
+        </div>
+      </div>
+      <div class="hero-visual">
+        <div class="mockup">
+          <div class="mock-phone">
+            <div class="mock-screen">
+              <div class="ms-top">
+                <span class="ms-dot"></span>
+                <div>
+                  <div class="ms-rname">The Corner Café</div>
+                  <div class="ms-sub">Tap items to add them</div>
+                </div>
+              </div>
+              <div class="ms-body">
+                <div class="ms-sec">Mains</div>
+                <div class="ms-item"><div><div class="ms-item-nm">Margherita Pizza</div><div class="ms-item-pr">£9.50</div></div><div class="ms-add">Add</div></div>
+                <div class="ms-item"><div><div class="ms-item-nm">Chicken Burger</div><div class="ms-item-pr">£13.00</div></div><div class="ms-stepper">− 1 +</div></div>
+                <div class="ms-item"><div><div class="ms-item-nm">Caesar Salad</div><div class="ms-item-pr">£8.50</div></div><div class="ms-add">Add</div></div>
+                <div class="ms-sec">Drinks</div>
+                <div class="ms-item"><div><div class="ms-item-nm">Still Water</div><div class="ms-item-pr">£2.50</div></div><div class="ms-add">Add</div></div>
+                <div class="ms-item"><div><div class="ms-item-nm">House Wine</div><div class="ms-item-pr">£6.00</div></div><div class="ms-add">Add</div></div>
+              </div>
+            </div>
+            <div class="ms-cart">Review order 1 · £13.00 →</div>
+          </div>
+          <div class="mock-badge">🧾 Order sent!</div>
+          <div class="mock-qr-badge"><strong>Table 4 QR ready</strong>Print &amp; place on table</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== HOW IT WORKS ===== -->
+<section class="mkt-section" id="how">
+  <div class="container">
+    <p class="s-eye">How it works</p>
+    <h2 class="s-title">Up and running before the lunch rush.</h2>
+    <p class="s-sub">No technical knowledge needed. If you can take a photo on your phone, you've already got this.</p>
+    <div class="hiw-tabs" role="tablist">
+      <button class="hiw-tab on" id="tab-r" onclick="switchTab('r')">For restaurants</button>
+      <button class="hiw-tab"    id="tab-c" onclick="switchTab('c')">For customers</button>
+    </div>
+    <div id="hiw-r" class="steps-grid fade-up">
+      <div class="step-card">
+        <div class="step-num">STEP 01</div>
+        <div class="step-icon">📷</div>
+        <h3>Photograph your menu</h3>
+        <p>Take a clear photo of your existing printed menu — laminated, blackboard, or paper all work.</p>
+      </div>
+      <div class="step-card">
+        <div class="step-num">STEP 02</div>
+        <div class="step-icon">✨</div>
+        <h3>AI reads it for you</h3>
+        <p>Claude AI scans the photo and extracts every item, price, and section heading in seconds. Fix anything it missed.</p>
+      </div>
+      <div class="step-card">
+        <div class="step-num">STEP 03</div>
+        <div class="step-icon">🖨️</div>
+        <h3>Print the QR code</h3>
+        <p>Download the QR and print it. Tape it to a table tent or laminate it — no special hardware needed.</p>
+      </div>
+      <div class="step-card">
+        <div class="step-num">STEP 04</div>
+        <div class="step-icon">💬</div>
+        <h3>Orders arrive by message</h3>
+        <p>When a customer orders, you get a WhatsApp or text with their table number and the full itemised bill.</p>
+      </div>
+    </div>
+    <div id="hiw-c" class="steps-grid hidden fade-up" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr))">
+      <div class="step-card">
+        <div class="step-icon">📱</div>
+        <h3>Scan the QR on your table</h3>
+        <p>Open your camera and point it at the code. The menu loads in your browser — no app to download.</p>
+      </div>
+      <div class="step-card">
+        <div class="step-icon">🛒</div>
+        <h3>Build your order</h3>
+        <p>Tap items to add them, adjust quantities, and add any notes for the kitchen.</p>
+      </div>
+      <div class="step-card">
+        <div class="step-icon">🚀</div>
+        <h3>Send to the kitchen</h3>
+        <p>Tap send and your order goes straight to the restaurant via WhatsApp or SMS. Done.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== FEATURES ===== -->
+<section class="mkt-section alt" id="features">
+  <div class="container">
+    <p class="s-eye">Why TableTap</p>
+    <h2 class="s-title">Everything a small restaurant actually needs.</h2>
+    <p class="s-sub">Built for independent restaurants who want a better way to take orders — without the cost, the contracts, or the learning curve.</p>
+    <div class="feat-grid">
+      <div class="feat-card fade-up"><span class="feat-icon">📷</span><h3>Photo your menu, we do the rest</h3><p>Point your phone at your printed menu and we'll pull out every item, price and section — no typing required.</p></div>
+      <div class="feat-card fade-up"><span class="feat-icon">📶</span><h3>No signal? Still works.</h3><p>A built-in reading engine runs entirely on your device — no internet connection needed.</p></div>
+      <div class="feat-card fade-up"><span class="feat-icon">📱</span><h3>Nothing to download</h3><p>Customers order straight from their browser. No app, no account, no friction.</p></div>
+      <div class="feat-card fade-up"><span class="feat-icon">🔒</span><h3>Your data stays yours</h3><p>Your menu lives inside the QR code. We never see it, store it, or touch it.</p></div>
+      <div class="feat-card fade-up"><span class="feat-icon">💬</span><h3>Orders to your phone</h3><p>Each order arrives as a WhatsApp or text message. No new hardware, no dashboard to watch.</p></div>
+      <div class="feat-card fade-up"><span class="feat-icon">🌍</span><h3>Works anywhere in the world</h3><p>Set prices in pounds, dollars, euros, or whatever your local currency is.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== PROOF ===== -->
+<div class="proof">
+  <div class="container">
+    <blockquote>"The easiest upgrade we've made all year — took 4 minutes to set up."</blockquote>
+    <cite>A restaurant owner, South London</cite>
+  </div>
+</div>
+
+<!-- ===== PRICING ===== -->
+<section class="mkt-section" id="pricing">
+  <div class="container">
+    <p class="s-eye">Pricing</p>
+    <h2 class="s-title">Honest pricing, no surprises.</h2>
+    <p class="s-sub">Free to start. Upgrade only if you grow into it.</p>
+    <div class="pricing-grid">
+      <div class="p-card">
+        <div class="p-label">Free</div>
+        <div class="p-price">£0</div>
+        <div class="p-per">forever</div>
+        <ul class="p-list">
+          <li><span class="p-chk">✓</span> Unlimited QR codes</li>
+          <li><span class="p-chk">✓</span> AI menu reading (Claude)</li>
+          <li><span class="p-chk">✓</span> On-device OCR (offline)</li>
+          <li><span class="p-chk">✓</span> WhatsApp &amp; SMS ordering</li>
+          <li><span class="p-chk">✓</span> Up to 40 menu items</li>
+          <li><span class="p-chk">✓</span> Manual menu editor</li>
+        </ul>
+        <a href="restaurant.html" class="btn btn-p btn-w">Get started free →</a>
+      </div>
+      <div class="p-card featured">
+        <div class="p-badge">Coming soon</div>
+        <div class="p-label">Pro</div>
+        <div class="p-price">£19</div>
+        <div class="p-per">per month</div>
+        <ul class="p-list">
+          <li><span class="p-chk">✓</span> Everything in Free</li>
+          <li><span class="p-chk">✓</span> Unlimited menu items</li>
+          <li><span class="p-chk">✓</span> Multiple locations</li>
+          <li><span class="p-chk">✓</span> Analytics dashboard</li>
+          <li><span class="p-chk">✓</span> Custom branding on QR</li>
+          <li><span class="p-chk">✓</span> Priority support</li>
+        </ul>
+        <button class="btn btn-w" style="background:rgba(255,255,255,.12);color:#fff;border:1.5px solid rgba(255,255,255,.2)" onclick="joinWaitlist()">Join the waitlist →</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== CTA BANNER ===== -->
+<section class="cta-banner mkt-section alt">
+  <div class="container">
+    <h2>Ready when you are.<br>Free to try, free to keep.</h2>
+    <p>No credit card, no account, no commitment. Just take a photo of your menu and you're done.</p>
+    <a href="restaurant.html" class="btn btn-p btn-lg">Set up my restaurant →</a>
+  </div>
+</section>
+
+<!-- ===== FOOTER ===== -->
+<footer class="site-footer">
+  <div class="footer-inner">
+    <div class="footer-brand">
+      <div class="fl">Table<span class="tap">Tap</span></div>
+      <p>AI-powered QR ordering for restaurants</p>
+    </div>
+    <div class="footer-links">
+      <h4>Product</h4>
+      <a href="#how">How it works</a>
+      <a href="#features">Features</a>
+      <a href="#pricing">Pricing</a>
+    </div>
+    <div class="footer-links">
+      <h4>Get started</h4>
+      <a href="restaurant.html">For restaurants</a>
+      <a href="order.html">Order food</a>
+    </div>
+    <div class="footer-bottom">
+      <span>© 2025 TableTap</span>
+      <span>Menu data lives in the QR — no servers, no databases.</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+/* ---- How-it-works tab toggle ---- */
+function switchTab(who) {
+  var r = document.getElementById('hiw-r');
+  var c = document.getElementById('hiw-c');
+  var tr = document.getElementById('tab-r');
+  var tc = document.getElementById('tab-c');
+  if (who === 'r') {
+    r.classList.remove('hidden'); c.classList.add('hidden');
+    tr.classList.add('on'); tc.classList.remove('on');
+  } else {
+    c.classList.remove('hidden'); r.classList.add('hidden');
+    tc.classList.add('on'); tr.classList.remove('on');
+  }
+}
+
+/* ---- Waitlist ---- */
+function joinWaitlist() {
+  window.location.href = 'mailto:hello@tabletap.app?subject=TableTap Pro — waitlist';
+}
+
+/* ---- Scroll animations ---- */
+var io = new IntersectionObserver(function(entries) {
+  entries.forEach(function(e) {
+    if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
+  });
+}, { threshold: 0.08 });
+document.querySelectorAll('.fade-up').forEach(function(el) { io.observe(el); });
+</script>
+</body>
+</html>

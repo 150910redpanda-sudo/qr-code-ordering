@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"/>
+<title>Menu — TableTap</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,400;1,700&family=Inter:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"></script>
+<link rel="stylesheet" href="style.css">
+<style>
+body { padding-top: var(--nav); padding-bottom: 80px; }
+
+#nav-rname { font-size: 13px; color: var(--muted); margin-left: 4px; }
+
+/* Loading / error screens */
+.load-wrap { text-align: center; padding: 80px 24px; }
+.load-wrap h2 { font-size: 22px; margin: 16px 0 8px; }
+.load-wrap p  { color: var(--muted); font-size: 15px; max-width: 320px; margin: 0 auto; }
+.spin-lg { width: 36px; height: 36px; border-width: 3px; }
+
+/* Confirmation screen */
+.conf-icon { font-size: 56px; line-height: 1; margin-bottom: 16px; }
+.conf-h    { font-size: 22px; margin-bottom: 8px; }
+
+/* Sending state */
+.finish-wrap { margin-top: 14px; }
+.finish-note { font-size: 13px; color: var(--muted); text-align: center; margin-top: 10px; line-height: 1.5; }
+</style>
+</head>
+<body>
+
+<nav class="site-nav">
+  <div class="nav-inner">
+    <a href="index.html" class="nav-logo">
+      <span class="nav-dot"></span>
+      <span class="nav-wordmark">Table<span class="tap">Tap</span></span>
+      <span id="nav-rname"></span>
+    </a>
+    <a href="index.html" class="btn btn-g btn-sm" id="nav-back">← Home</a>
+  </div>
+</nav>
+
+<div class="wrap">
+
+  <!-- Loading -->
+  <div id="c-loading">
+    <div class="load-wrap">
+      <div class="spin spin-g spin-lg" style="margin:0 auto 24px"></div>
+      <p id="loadMsg" style="color:var(--muted);font-size:15px">Loading menu…</p>
+    </div>
+  </div>
+
+  <!-- Error -->
+  <div id="c-error" class="hidden">
+    <div class="load-wrap">
+      <div style="font-size:48px;margin-bottom:16px">🍽️</div>
+      <h2>Menu not found</h2>
+      <p id="errMsg">We couldn't find this restaurant's menu. The link may have changed — ask your server for the latest QR code.</p>
+      <a href="index.html" class="btn btn-g mt" style="display:inline-flex;margin-top:24px">← Back to home</a>
+    </div>
+  </div>
+
+  <!-- Menu -->
+  <div id="c-menu" class="hidden">
+    <div class="card" style="padding:16px 20px;margin-bottom:14px">
+      <h2 id="mName" style="font-size:22px;margin-bottom:4px">Menu</h2>
+      <p class="note">Tap anything that takes your fancy.</p>
+    </div>
+    <div id="menuList"></div>
+    <div class="cartbar hidden" id="cartBar">
+      <button class="btn btn-p" onclick="goReview()" style="width:100%">
+        Review order <span class="n" id="cartN">0</span> · <span id="cartTot">£0.00</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Review -->
+  <div id="c-review" class="hidden">
+    <div class="card">
+      <h2 style="font-size:18px;margin-bottom:14px">Your order</h2>
+      <div id="orderTicket" class="ticket"></div>
+      <div class="field mt">
+        <label class="fld" for="tableNo">Table number</label>
+        <input id="tableNo" type="text" inputmode="numeric" placeholder="e.g. 4"/>
+      </div>
+      <div class="field">
+        <label class="fld" for="kNote">Anything the kitchen should know?</label>
+        <textarea id="kNote" placeholder="Allergies, no onions, extra spicy…"></textarea>
+      </div>
+    </div>
+    <div class="finish-wrap">
+      <button class="btn btn-p btn-w btn-lg" id="finishBtn" onclick="finishOrder()">Finish order</button>
+      <p id="sendStat" class="stat"></p>
+      <p class="finish-note">Your order is sent directly to the kitchen by text message.</p>
+    </div>
+    <button class="btn btn-g btn-w mt" onclick="goStep('c-menu')">← Add more items</button>
+  </div>
+
+  <!-- Sent -->
+  <div id="c-sent" class="hidden">
+    <div class="card center" style="padding:40px 24px">
+      <div style="font-size:52px;line-height:1;margin-bottom:18px">✅</div>
+      <h2 style="font-size:22px;margin-bottom:8px">Order received!</h2>
+      <p class="note" style="max-width:280px;margin:0 auto 24px">Your order has been sent straight to the kitchen. Sit back — they've got it.</p>
+      <div id="sentTicket" class="ticket" style="text-align:left;margin-bottom:24px"></div>
+      <button class="btn btn-p btn-w" onclick="resetOrder()">Order something else</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+/* ============================================================
+   State
+   ============================================================ */
+var state = { restaurant:'', phone:'', currency:'£', menu:[], cart:{}, lastOrderText:'' };
+var $ = function(id){ return document.getElementById(id); };
+function money(n){ return state.currency+(Number(n)||0).toFixed(2); }
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+/* ============================================================
+   Step routing
+   ============================================================ */
+var CSTEPS = ['c-loading','c-error','c-menu','c-review','c-sent'];
+function goStep(id){
+  CSTEPS.forEach(function(s){ var el=$(s); if(el) el.classList.toggle('hidden', s!==id); });
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+
+/* ============================================================
+   Load menu from server on page load
+   ============================================================ */
+window.addEventListener('DOMContentLoaded', async function(){
+  /* Extract restaurant ID from URL path: /menu/<id> */
+  var parts = window.location.pathname.split('/').filter(Boolean);
+  var id = parts[parts.length - 1];
+
+  if (!id || id === 'menu') {
+    $('errMsg').textContent = 'No restaurant was specified in this link.';
+    goStep('c-error'); return;
+  }
+
+  /* Pre-fill table number from ?table=N (set by per-table QR codes) */
+  var tableParam = new URLSearchParams(window.location.search).get('table');
+
+  try {
+    var res  = await fetch('/api/get-restaurant?id=' + encodeURIComponent(id));
+    var data = await res.json();
+    if (!res.ok || !data.payload) throw new Error(data.error || 'not found');
+
+    var payload = decodePacked(data.payload);
+    if (!payload) throw new Error('corrupt data');
+
+    loadMenu(payload);
+    if (tableParam) { var tn=$('tableNo'); if(tn) tn.value=tableParam; }
+    goStep('c-menu');
+  } catch(e) {
+    $('errMsg').textContent = "We couldn't load this restaurant's menu. The link may be out of date — ask your server for the current QR code.";
+    goStep('c-error');
+  }
+});
+
+function decodePacked(packed){
+  try{
+    var json = LZString.decompressFromEncodedURIComponent(packed);
+    if(!json) return null;
+    var p = JSON.parse(json);
+    if(p && p.m) return p;
+  }catch(e){}
+  return null;
+}
+
+/* ============================================================
+   Load menu into view
+   ============================================================ */
+function loadMenu(p){
+  state.restaurant = p.r || 'Menu';
+  state.phone      = p.p || '';
+  state.currency   = p.c || '£';
+  state.menu       = (p.m||[]).map(function(it){
+    return { name:it.n, price:(it.pr==null?null:Number(it.pr)), desc:it.d||'', section:it.s||'Menu' };
+  });
+  state.cart = {};
+  $('mName').textContent = state.restaurant;
+  var nr=$('nav-rname'); if(nr) nr.textContent = '· '+state.restaurant;
+  document.title = state.restaurant + ' — Order';
+  renderMenuList(); updateCartBar();
+}
+
+function renderMenuList(){
+  var secs = {};
+  state.menu.forEach(function(it,i){ (secs[it.section]=secs[it.section]||[]).push(i); });
+  var host=$('menuList'); host.innerHTML='';
+  Object.keys(secs).forEach(function(sec){
+    var card=document.createElement('div'); card.className='card'; card.style.cssText='padding:4px 18px 12px;margin-bottom:14px';
+    var h=document.createElement('div'); h.className='sec-h'; h.textContent=sec; card.appendChild(h);
+    secs[sec].forEach(function(i){
+      var it=state.menu[i];
+      var row=document.createElement('div'); row.className='item';
+      var info=document.createElement('div'); info.className='info';
+      info.innerHTML='<div class="nm">'+esc(it.name)+'</div>'
+        +(it.desc?'<div class="ds">'+esc(it.desc)+'</div>':'')
+        +'<div class="pr">'+(it.price==null?'—':money(it.price))+'</div>';
+      var ctl=document.createElement('div'); ctl.id='ctl-'+i; ctl.appendChild(makeCtl(i));
+      row.appendChild(info); row.appendChild(ctl); card.appendChild(row);
+    });
+    host.appendChild(card);
+  });
+}
+
+function makeCtl(i){
+  var q=state.cart[i]||0, wrap=document.createElement('div');
+  if(q<=0){
+    var b=document.createElement('button'); b.className='addbtn'; b.textContent='Add';
+    b.onclick=function(){ state.cart[i]=1; refreshCtl(i); updateCartBar(); };
+    wrap.appendChild(b);
+  }else{
+    var s=document.createElement('div'); s.className='step';
+    s.innerHTML='<button aria-label="Less">−</button><span class="q">'+q+'</span><button aria-label="More">＋</button>';
+    s.children[0].onclick=function(){ state.cart[i]=Math.max(0,(state.cart[i]||0)-1); if(!state.cart[i]) delete state.cart[i]; refreshCtl(i); updateCartBar(); };
+    s.children[2].onclick=function(){ state.cart[i]=(state.cart[i]||0)+1; refreshCtl(i); updateCartBar(); };
+    wrap.appendChild(s);
+  }
+  return wrap;
+}
+function refreshCtl(i){ var c=$('ctl-'+i); if(c){ c.innerHTML=''; c.appendChild(makeCtl(i)); } }
+function cartCount(){ return Object.keys(state.cart).reduce(function(a,k){return a+state.cart[k];},0); }
+function cartTotal(){ return Object.keys(state.cart).reduce(function(a,k){ return a+(state.menu[k].price||0)*state.cart[k]; },0); }
+function updateCartBar(){
+  var n=cartCount();
+  $('cartBar').classList.toggle('hidden',n<=0);
+  $('cartN').textContent=n;
+  $('cartTot').textContent=money(cartTotal());
+}
+
+/* ============================================================
+   Review + send
+   ============================================================ */
+function goReview(){
+  $('orderTicket').innerHTML=buildTicketHTML(false);
+  var ss=$('sendStat'); if(ss) ss.innerHTML='';
+  goStep('c-review');
+}
+
+function buildTicketHTML(withMeta){
+  var rows='';
+  Object.keys(state.cart).forEach(function(k){
+    var it=state.menu[k], q=state.cart[k];
+    rows+='<div class="tr"><span>'+q+'× '+esc(it.name)+'</span><span>'+(it.price==null?'—':money(it.price*q))+'</span></div>';
+  });
+  var meta='';
+  if(withMeta){
+    var tn=$('tableNo').value.trim(), nt=$('kNote').value.trim();
+    meta=(tn?'<div class="tr"><span>Table</span><span>'+esc(tn)+'</span></div>':'')
+        +(nt?'<div class="tr" style="display:block"><span>Note:</span> '+esc(nt)+'</div>':'');
+  }
+  return '<h3>'+esc(state.restaurant)+'</h3>'
+    +'<div class="perf"></div>'+rows
+    +'<div class="perf"></div><div class="tr tot"><span>Total</span><span>'+money(cartTotal())+'</span></div>'
+    +(meta?'<div class="perf"></div>'+meta:'');
+}
+
+function buildOrderText(){
+  var lines=['NEW ORDER — '+state.restaurant];
+  var tn=$('tableNo').value.trim(); if(tn) lines.push('Table '+tn);
+  lines.push('──────────────────');
+  Object.keys(state.cart).forEach(function(k){
+    var it=state.menu[k], q=state.cart[k];
+    lines.push(q+'x '+it.name+(it.price==null?'':'  '+money(it.price*q)));
+  });
+  lines.push('──────────────────');
+  lines.push('TOTAL '+money(cartTotal()));
+  var nt=$('kNote').value.trim(); if(nt) lines.push('Note: '+nt);
+  return lines.join('\n');
+}
+
+async function finishOrder(){
+  if(cartCount()<=0){ alert('Your order is empty.'); return; }
+  var btn=$('finishBtn'), ss=$('sendStat');
+  if(ss) ss.innerHTML='';
+
+  if(!state.phone){
+    state.lastOrderText=buildOrderText();
+    if(ss) ss.innerHTML='<span class="err">This restaurant hasn\'t added a phone number. Copy your order and send it manually.</span>'
+      +'<br><button class="btn btn-g btn-sm" style="margin-top:8px" onclick="copyFallback()">Copy order text</button>';
+    return;
+  }
+
+  if(btn){ btn.disabled=true; btn.innerHTML='<span class="spin" style="width:15px;height:15px;border-width:2.5px"></span> Sending…'; }
+  state.lastOrderText=buildOrderText();
+
+  try{
+    var res=await fetch('/api/send-order',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({to:state.phone, body:state.lastOrderText})
+    });
+    var data=await res.json();
+    if(!res.ok) throw new Error(data.error||'Could not send the order.');
+    $('sentTicket').innerHTML=buildTicketHTML(true);
+    goStep('c-sent');
+  }catch(e){
+    if(ss) ss.innerHTML='<span class="err">'+esc(String(e.message))+'</span>'
+      +'<br><button class="btn btn-g btn-sm" style="margin-top:8px" onclick="copyFallback()">Copy order to send manually</button>';
+  }finally{
+    if(btn){ btn.disabled=false; btn.textContent='Finish order'; }
+  }
+}
+
+function copyFallback(){
+  if(!state.lastOrderText) state.lastOrderText=buildOrderText();
+  navigator.clipboard.writeText(state.lastOrderText).then(function(){
+    var ss=$('sendStat'); if(ss) ss.innerHTML+='<br><span class="ok" style="font-size:13px">Copied to clipboard.</span>';
+  });
+}
+
+function resetOrder(){
+  state.cart={};
+  var tn=$('tableNo'); if(tn) tn.value='';
+  var kn=$('kNote');   if(kn) kn.value='';
+  var ss=$('sendStat'); if(ss) ss.innerHTML='';
+  renderMenuList(); updateCartBar(); goStep('c-menu');
+}
+</script>
+</body>
+</html>

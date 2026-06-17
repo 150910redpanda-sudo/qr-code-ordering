@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"/>
+<title>Set up your restaurant — TableTap</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,400;1,700&family=Inter:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@4.1.1/dist/tesseract.min.js"></script>
+<link rel="stylesheet" href="style.css">
+<style>
+body { padding-top: var(--nav); padding-bottom: 80px; }
+.page-header { padding: 48px 0 40px; text-align: center; }
+.page-header h1 { font-size: clamp(26px,4vw,36px); margin-bottom: 6px; }
+.page-header p  { color: var(--muted); font-size: 15px; }
+
+/* Step panels */
+.step-panel { animation: panelIn .3s ease both; }
+@keyframes panelIn { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
+
+/* Method buttons */
+.method-group { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+.method-btn {
+  display: flex; align-items: center; gap: 14px;
+  background: var(--surface); border: 1.5px solid var(--bd-md);
+  border-radius: var(--r); padding: 14px 18px;
+  cursor: pointer; transition: all .15s; text-align: left;
+  width: 100%; font-family: inherit;
+}
+.method-btn:hover:not(:disabled) { border-color: var(--green); box-shadow: 0 0 0 3px var(--green-lt); }
+.method-btn:disabled { opacity: .45; cursor: not-allowed; }
+.method-btn.primary-method { border-color: var(--green); background: rgba(42,107,71,.04); }
+.method-icon { font-size: 22px; flex-shrink: 0; }
+.method-text strong { display: block; font-size: 14.5px; font-weight: 600; color: var(--ink); }
+.method-text span   { display: block; font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+
+/* Download QR hint */
+.qr-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 18px; }
+
+/* Per-table QR grid */
+.tqr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 14px; }
+.tqr-cell { text-align: center; border: 1px solid var(--brd,#e5e1d8); border-radius: var(--r-lg,14px); padding: 16px 10px 12px; background: var(--surface,#fff); }
+.tqr-label { font-family: 'Playfair Display', serif; font-size: 15px; font-weight: 700; margin-bottom: 10px; color: var(--ink,#1a1916); }
+.tqr-dl { margin-top: 10px; width: 100%; }
+#tableQRsWrap { margin-top: 28px; }
+.tqr-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; flex-wrap: wrap; gap: 10px; }
+.tqr-header h3 { font-family: 'Playfair Display', serif; font-size: 18px; margin: 0; }
+</style>
+</head>
+<body>
+
+<nav class="site-nav">
+  <div class="nav-inner">
+    <a href="index.html" class="nav-logo">
+      <span class="nav-dot"></span>
+      <span class="nav-wordmark">Table<span class="tap">Tap</span></span>
+    </a>
+    <a href="index.html" class="btn btn-g btn-sm">← Back to home</a>
+  </div>
+</nav>
+
+<div class="wrap">
+  <div class="page-header">
+    <h1>Set up your restaurant</h1>
+    <p>Takes about 2 minutes — no account needed.</p>
+  </div>
+
+  <!-- Wizard step indicator -->
+  <div class="wiz" id="wiz" aria-label="Setup progress">
+    <div class="wiz-item active" id="wi1"><div class="wiz-dot">1</div><span class="wiz-label">Details</span></div>
+    <div class="wiz-line" id="wl1"></div>
+    <div class="wiz-item" id="wi2"><div class="wiz-dot">2</div><span class="wiz-label">Menu</span></div>
+    <div class="wiz-line" id="wl2"></div>
+    <div class="wiz-item" id="wi3"><div class="wiz-dot">3</div><span class="wiz-label">Review</span></div>
+    <div class="wiz-line" id="wl3"></div>
+    <div class="wiz-item" id="wi4"><div class="wiz-dot">4</div><span class="wiz-label">QR Code</span></div>
+  </div>
+
+  <!-- ── STEP 1: Details ── -->
+  <div id="s-details" class="step-panel">
+    <div class="card">
+      <div class="field">
+        <label class="fld" for="rname">Restaurant name</label>
+        <input id="rname" type="text" placeholder="e.g. The Corner Café" autocomplete="organization"/>
+      </div>
+      <div class="field row2">
+        <div>
+          <label class="fld" for="rphone">WhatsApp / SMS number</label>
+          <input id="rphone" type="tel" placeholder="+44 7700 900000" autocomplete="tel"/>
+        </div>
+        <div style="max-width:100px">
+          <label class="fld" for="cur">Currency</label>
+          <select id="cur">
+            <option value="£">£ GBP</option>
+            <option value="$">$ USD</option>
+            <option value="€">€ EUR</option>
+            <option value="A$">A$ AUD</option>
+            <option value="C$">C$ CAD</option>
+            <option value="¥">¥ JPY</option>
+          </select>
+        </div>
+      </div>
+      <p class="note">Orders arrive as a WhatsApp or text message to this number, with the table number and itemised bill.</p>
+    </div>
+    <button class="btn btn-p btn-w mt" onclick="nextToUpload()">Continue to menu →</button>
+    <p id="det-err" class="stat"></p>
+  </div>
+
+  <!-- ── STEP 2: Upload / Method ── -->
+  <div id="s-upload" class="step-panel hidden">
+    <div class="card">
+      <label class="fld">Photo of your menu</label>
+      <div class="drop-zone" id="drop" onclick="document.getElementById('file').click()">
+        <div class="dz-ic">📷</div>
+        <p><strong>Tap to take a photo</strong> or upload<br>a picture of your printed menu</p>
+      </div>
+      <input id="file" type="file" accept="image/*" capture="environment" class="hidden" onchange="onFile(event)"/>
+      <div id="prev" class="photo-prev hidden"></div>
+    </div>
+
+    <div class="card mt">
+      <label class="fld">How would you like to read the menu?</label>
+      <div class="method-group">
+        <button id="readBtn" class="method-btn primary-method" disabled onclick="readMenu()">
+          <span class="method-icon">✨</span>
+          <div class="method-text"><strong>Read with AI (recommended)</strong><span>Uses Claude AI — fastest, most accurate. Requires internet.</span></div>
+        </button>
+        <button id="localBtn" class="method-btn" disabled onclick="readMenuLocal()">
+          <span class="method-icon">📍</span>
+          <div class="method-text"><strong>Read on this device</strong><span>Uses Tesseract OCR — works offline. Downloads ~5 MB once.</span></div>
+        </button>
+        <button id="manualBtn" class="method-btn" disabled onclick="skipToManual()">
+          <span class="method-icon">✏️</span>
+          <div class="method-text"><strong>Enter menu manually</strong><span>Type in items yourself — no photo needed.</span></div>
+        </button>
+      </div>
+    </div>
+
+    <div id="ocrProg" class="card mt hidden">
+      <div class="ocr-track"><div id="ocrFill" class="ocr-fill"></div></div>
+      <div id="ocrLabel" class="ocr-msg"></div>
+    </div>
+    <p id="readStat" class="stat"></p>
+    <button class="btn btn-g btn-w mt" onclick="goStep('s-details')">← Back</button>
+  </div>
+
+  <!-- ── STEP 3: Review ── -->
+  <div id="s-review" class="step-panel hidden">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <h2 style="font-size:18px">Review your menu</h2>
+        <span id="reviewPill" class="pill">Looks good — fix anything that's off</span>
+      </div>
+      <p class="note">Tap any field to edit it. Hit ✕ to remove something. Add anything that got missed.</p>
+      <div id="editor" style="margin-top:12px"></div>
+      <button class="btn btn-g btn-sm mt" onclick="addItem()">＋ Add an item</button>
+    </div>
+    <button class="btn btn-p btn-w mt" id="makeQrBtn" onclick="makeQR()">Generate QR code →</button>
+    <button class="btn btn-g btn-w mt" onclick="goStep('s-upload')">← Back to menu</button>
+  </div>
+
+  <!-- ── STEP 4: QR Code ── -->
+  <div id="s-qr" class="step-panel hidden">
+
+    <!-- Main restaurant QR -->
+    <div class="tent">
+      <div class="rname" id="qrName">Restaurant</div>
+      <div class="scancta">Scan to order</div>
+      <div id="qrbox"></div>
+      <div class="hint">Customers scan with their phone camera and land straight on your menu — no app, no sign-up, nothing to download.</div>
+    </div>
+    <div class="qr-actions">
+      <button class="btn btn-dk btn-w" onclick="downloadQR()">Download QR image</button>
+      <button class="btn btn-p  btn-w" onclick="previewAsCustomer()">Preview customer view →</button>
+    </div>
+
+    <!-- Shareable link -->
+    <div class="card mt">
+      <label class="fld">Direct order link</label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input id="orderUrlField" type="text" readonly
+          style="flex:1;font-size:12.5px;padding:10px 12px;background:var(--bg);border:1.5px solid var(--bd-md);border-radius:9px;color:var(--muted);outline:none;cursor:pointer"
+          onclick="this.select()" aria-label="Direct order link"/>
+        <button class="btn btn-g btn-sm" onclick="copyOrderUrl()" id="copyUrlBtn">Copy</button>
+      </div>
+      <p class="note mt-sm">Share this link directly — customers click it to go straight to ordering, no QR scan needed.</p>
+    </div>
+
+    <!-- Table QR generator -->
+    <div class="card mt">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+        <div>
+          <div class="fld" style="font-size:14px;color:var(--ink);margin-bottom:4px">Generate per-table QR codes</div>
+          <p class="note">Each table gets its own unique QR — the table number is pre-filled when customers scan, so they never have to type it.</p>
+        </div>
+      </div>
+      <div class="row2 keep mt" style="max-width:240px">
+        <div>
+          <label class="fld" for="tFrom">From table</label>
+          <input id="tFrom" type="number" min="1" max="99" value="1"
+            style="padding:10px 12px;font-size:15px;background:var(--bg);border:1.5px solid var(--bd-md);border-radius:9px;width:100%;outline:none"/>
+        </div>
+        <div>
+          <label class="fld" for="tTo">To table</label>
+          <input id="tTo" type="number" min="1" max="99" value="10"
+            style="padding:10px 12px;font-size:15px;background:var(--bg);border:1.5px solid var(--bd-md);border-radius:9px;width:100%;outline:none"/>
+        </div>
+      </div>
+      <button class="btn btn-p btn-w mt" onclick="generateTableQRs()">Generate table QR codes</button>
+    </div>
+
+    <!-- Table QR grid (shown after generation) -->
+    <div id="tableQRsWrap" class="hidden">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin:20px 0 12px">
+        <h3 style="font-size:16px">Table QR codes</h3>
+        <button class="btn btn-g btn-sm" onclick="printTableQRs()">🖨 Print all</button>
+      </div>
+      <p class="note" style="margin-bottom:16px">Each QR links directly to <strong id="tqrRname"></strong> with the table number pre-filled. Scan one to test it.</p>
+      <div id="tableQRsGrid" class="tqr-grid"></div>
+    </div>
+
+    <div class="divider mt">edit</div>
+    <button class="btn btn-g btn-w" onclick="goStep('s-review')">← Edit menu</button>
+    <p class="note center mt" style="opacity:.6">Your menu is saved and your link is permanent — update your menu anytime without reprinting your QR codes.</p>
+  </div>
+</div>
+
+<canvas id="work" class="hidden"></canvas>
+
+<script>
+/* ============================================================
+   State
+   ============================================================ */
+var state = {
+  restaurant:'', phone:'', currency:'£',
+  imgB64:null, imgType:'image/jpeg',
+  menu:[], cart:{}, lastOrderText:''
+};
+var $ = function(id){ return document.getElementById(id); };
+function money(n){ return state.currency + (Number(n)||0).toFixed(2); }
+
+/* ============================================================
+   Wizard navigation
+   ============================================================ */
+var STEPS = ['s-details','s-upload','s-review','s-qr'];
+var STEP_N = { 's-details':1, 's-upload':2, 's-review':3, 's-qr':4 };
+
+function goStep(id) {
+  STEPS.forEach(function(s){ var el=$(s); if(el) el.classList.toggle('hidden', s!==id); });
+  setWizDot(STEP_N[id]||1);
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+
+function setWizDot(n) {
+  for(var i=1;i<=4;i++){
+    var item=$('wi'+i);
+    if(!item) continue;
+    item.classList.toggle('active', i===n);
+    item.classList.toggle('done',   i<n);
+    var dot=item.querySelector('.wiz-dot');
+    dot.textContent = (i<n) ? '✓' : String(i);
+    if(i<4){ var ln=$('wl'+i); if(ln) ln.style.background = (i<n)?'var(--green)':''; }
+  }
+}
+
+/* ============================================================
+   Step 1 → 2
+   ============================================================ */
+function nextToUpload(){
+  var name=$('rname').value.trim(), phone=$('rphone').value.trim();
+  if(!name){  $('det-err').innerHTML='<span class="err">Please enter your restaurant name.</span>'; return; }
+  if(!phone){ $('det-err').innerHTML='<span class="err">Please enter a phone number for orders.</span>'; return; }
+  $('det-err').textContent='';
+  state.restaurant=name; state.phone=phone; state.currency=$('cur').value;
+  syncUpload();
+  goStep('s-upload');
+}
+
+/* ============================================================
+   Step 2: Photo upload
+   ============================================================ */
+function syncUpload(){
+  var has = !!state.imgB64;
+  $('readBtn').disabled  = !has;
+  $('localBtn').disabled = !has;
+  $('manualBtn').disabled = false; // manual never needs a photo
+}
+
+function onFile(e){
+  var f=e.target.files[0]; if(!f) return;
+  var reader=new FileReader();
+  reader.onload=function(){
+    var img=new Image();
+    img.onload=function(){
+      var max=1500, w=img.width, h=img.height;
+      if(Math.max(w,h)>max){ var s=max/Math.max(w,h); w=Math.round(w*s); h=Math.round(h*s); }
+      var c=$('work'); c.width=w; c.height=h;
+      c.getContext('2d').drawImage(img,0,0,w,h);
+      var url=c.toDataURL('image/jpeg',0.82);
+      state.imgB64=url.split(',')[1]; state.imgType='image/jpeg';
+      $('prev').innerHTML='<img src="'+url+'" alt="Menu preview"/>';
+      $('prev').classList.remove('hidden');
+      syncUpload();
+    };
+    img.src=reader.result;
+  };
+  reader.readAsDataURL(f);
+}
+
+/* ============================================================
+   Step 2 → 3: AI read (Claude via /api/read-menu)
+   ============================================================ */
+async function readMenu(){
+  var btn=$('readBtn');
+  btn.disabled=true;
+  btn.querySelector('strong').textContent='Reading your menu…';
+  $('readStat').textContent='This usually takes a few seconds.';
+
+  var prompt="You are a menu digitiser. Read this photo of a restaurant menu and extract every food and drink item. "
+    +"Respond with ONLY valid JSON and nothing else — no markdown, no commentary. Use exactly this schema:\n"
+    +'{"items":[{"name":"string","price":number_or_null,"desc":"string","section":"string"}]}\n'
+    +"Rules: price is a plain number with no currency symbol; null if not shown. "
+    +"desc is a short description (max ~8 words) or empty string. "
+    +"section is the heading the item sits under (e.g. Starters, Mains, Drinks); if none use \"Menu\". "
+    +"Keep names exactly as written. Do not invent items.";
+
+  try{
+    var res=await fetch('/api/read-menu',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({image:state.imgB64, imageType:state.imgType, prompt:prompt})
+    });
+    var data=await res.json();
+    if(!res.ok) throw new Error(data.error||'API error');
+    var text=(data.content||[]).filter(function(b){return b.type==='text';}).map(function(b){return b.text;}).join('');
+    var json=extractJSON(text);
+    var parsed=JSON.parse(json);
+    var items=(parsed.items||[]).filter(function(it){return it&&it.name;});
+    if(!items.length) throw new Error('no items');
+    state.menu=items.map(function(it){
+      return {name:String(it.name).trim(), price:(it.price==null?null:Number(it.price)), desc:(it.desc?String(it.desc).trim():''), section:(it.section?String(it.section).trim():'Menu')};
+    });
+    var pill=$('reviewPill'); if(pill) pill.textContent='Looks good — fix anything that\'s off';
+    renderEditor(); goStep('s-review');
+  }catch(err){
+    $('readStat').innerHTML='<span class="err">Couldn\'t read that one. Try a clearer, well-lit photo — or use Local OCR or manual entry.</span>';
+  }finally{
+    btn.querySelector('strong').textContent='Read with AI (recommended)';
+    syncUpload();
+  }
+}
+
+function extractJSON(t){
+  if(!t) throw new Error('empty');
+  t=t.replace(/```json/gi,'').replace(/```/g,'').trim();
+  var a=t.indexOf('{'), b=t.lastIndexOf('}');
+  if(a===-1||b===-1) throw new Error('no json');
+  return t.slice(a,b+1);
+}
+
+/* ============================================================
+   Step 2 → 3: Local Tesseract OCR
+   ============================================================ */
+async function readMenuLocal(){
+  var btn=$('localBtn');
+  btn.disabled=true; $('readBtn').disabled=true;
+  btn.querySelector('strong').textContent='Starting OCR engine…';
+  $('ocrProg').classList.remove('hidden');
+  $('readStat').textContent='';
+
+  function prog(msg, pct){
+    $('ocrFill').style.width=pct+'%';
+    $('ocrLabel').textContent=msg;
+  }
+
+  try{
+    var url='data:'+state.imgType+';base64,'+state.imgB64;
+    var result=await Tesseract.recognize(url,'eng',{
+      logger:function(m){
+        if(m.status==='loading tesseract core')            prog('Loading OCR engine…',               Math.round(m.progress*25));
+        else if(m.status==='loading language traineddata') prog('Downloading language model (~5 MB, one-time)…', 25+Math.round(m.progress*45));
+        else if(m.status==='initializing api')             prog('Initialising…',                     70);
+        else if(m.status==='recognizing text')             prog('Reading your menu…',                70+Math.round(m.progress*30));
+      }
+    });
+    prog('Done — reviewing results', 100);
+    var text=result.data.text;
+    if(!text||text.trim().length<5) throw new Error('no text');
+    var items=parseOcrToMenu(text);
+    if(!items.length) throw new Error('no items');
+    state.menu=items;
+    var pill=$('reviewPill'); if(pill) pill.textContent='OCR read it — check it over';
+    renderEditor(); goStep('s-review');
+  }catch(err){
+    $('readStat').innerHTML='<span class="err">Couldn\'t extract items from that photo. Try a flatter, well-lit shot — or use manual entry.</span>';
+  }finally{
+    btn.querySelector('strong').textContent='Read on this device';
+    syncUpload();
+    $('ocrProg').classList.add('hidden');
+    $('ocrFill').style.width='0%';
+  }
+}
+
+function parseOcrToMenu(raw){
+  var text=raw.replace(/\.{3,}/g,' ').replace(/_{3,}/g,' ').replace(/\|/g,'I')
+              .replace(/([£$€])O(\d)/g,'$10$2').replace(/([£$€])\s*l(\d)/g,'$11$2');
+  var lines=text.split('\n').map(function(l){return l.trim();}).filter(function(l){return l.length>1;});
+  var PRICE_RE=/(?:[£$€¥₹])\s*(\d{1,3}(?:[.,]\d{1,2})?)|(\d{1,3}(?:[.,]\d{2}))\s*(?:[£$€])/;
+  var SEC_RE=/^(starters?|mains?|desserts?|drinks?|sides?|breakfast|lunch|dinner|snacks?|soups?|salads?|pizza|pasta|burgers?|specials?|cocktails?|wines?|beers?|soft\s+drinks?|hot\s+drinks?|appetiz|seafood|vegetarian|vegan|kids?|children|sharing|extras?|sauces?)/i;
+  function xprice(l){ var m=l.match(PRICE_RE); if(!m) return null; var n=parseFloat((m[1]||m[2]).replace(',','.')); return(n>0&&n<999)?n:null; }
+  function strip(l){ return l.replace(PRICE_RE,'').replace(/\s+/g,' ').replace(/^[\s\-–—·•.]+|[\s\-–—·•.]+$/g,'').trim(); }
+  function isSec(l){ var c=l.replace(/[-_=*•·]/g,'').trim(); if(c.length<2||c.length>55||xprice(c)!==null) return false; if(SEC_RE.test(c)) return true; if(c===c.toUpperCase()&&/[A-Z]/.test(c)&&!/\d/.test(c)) return true; return false; }
+  var items=[],sec='Menu',i=0;
+  while(i<lines.length){
+    var line=lines[i];
+    if(isSec(line)){ sec=line.replace(/[-_=*•·]/g,'').trim(); i++; continue; }
+    var p=xprice(line);
+    if(p!==null){ var nm=strip(line); if(nm.length>1){ var desc=''; var nx=lines[i+1]||''; if(nx&&!isSec(nx)&&xprice(nx)===null&&nx.length>3&&nx.length<120){ desc=nx; i++; } items.push({name:nm,price:p,desc:desc,section:sec}); } i++; continue; }
+    var np=xprice(lines[i+1]||'');
+    if(np!==null&&!isSec(line)&&line.length>1&&line.length<80){ items.push({name:line,price:np,desc:'',section:sec}); i+=2; continue; }
+    i++;
+  }
+  return items;
+}
+
+/* ============================================================
+   Step 2 → 3: Manual entry
+   ============================================================ */
+function skipToManual(){
+  if(!state.menu.length) state.menu.push({name:'',price:null,desc:'',section:'Menu'});
+  var pill=$('reviewPill'); if(pill) pill.textContent='Type in your menu below';
+  renderEditor(); goStep('s-review');
+}
+
+/* ============================================================
+   Step 3: Menu editor
+   ============================================================ */
+function renderEditor(){
+  var box=$('editor'); box.innerHTML='';
+  state.menu.forEach(function(it,i){
+    var row=document.createElement('div'); row.className='editrow';
+    row.innerHTML='<input class="enm inp" type="text" value="'+esc(it.name)+'" oninput="editName('+i+',this.value)" placeholder="Item name" aria-label="Item name"/>'
+      +'<input class="epr inp" type="text" inputmode="decimal" value="'+(it.price==null?'':it.price)+'" oninput="editPrice('+i+',this.value)" placeholder="Price" aria-label="Price"/>'
+      +'<button class="iconbtn" onclick="removeItem('+i+')" aria-label="Remove">✕</button>';
+    box.appendChild(row);
+  });
+}
+function editName(i,v){ state.menu[i].name=v; }
+function editPrice(i,v){ var n=parseFloat(v); state.menu[i].price=isNaN(n)?null:n; }
+function removeItem(i){ state.menu.splice(i,1); renderEditor(); }
+function addItem(){
+  state.menu.push({name:'',price:null,desc:'',section:'Menu'});
+  renderEditor();
+  var last=$('editor').querySelector('.editrow:last-child .enm');
+  if(last) last.focus();
+}
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+/* ============================================================
+   Step 4: QR generation
+   ============================================================ */
+function buildPayload(){
+  return {
+    r:state.restaurant||'Our Menu', p:state.phone, c:state.currency,
+    m:state.menu.filter(function(it){return it.name;}).map(function(it){
+      return {n:it.name, pr:(it.price==null?null:it.price), d:it.desc||'', s:it.section||'Menu'};
+    })
+  };
+}
+
+/* stored when QR is generated, reused for table QRs */
+var _packed = '';
+var _restaurantId = localStorage.getItem('tt-restaurant-id') || '';
+var SITE = 'https://qr-code-ordering-r2x7.vercel.app';
+
+async function makeQR(){
+  var clean=state.menu.filter(function(it){return it.name;});
+  if(!clean.length){ alert('Add at least one menu item before generating a QR code.'); return; }
+
+  var btn=$('makeQrBtn');
+  if(btn){ btn.disabled=true; btn.textContent='Saving your menu…'; }
+
+  var payload=buildPayload();
+  _packed=LZString.compressToEncodedURIComponent(JSON.stringify(payload));
+
+  var orderUrl;
+  try{
+    var res=await fetch('/api/save-restaurant',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        payload:_packed,
+        name:state.restaurant,
+        id:_restaurantId||undefined
+      })
+    });
+    var data=await res.json();
+    if(!res.ok||!data.id) throw new Error(data.error||'save failed');
+    _restaurantId=data.id;
+    localStorage.setItem('tt-restaurant-id', _restaurantId);
+    orderUrl=SITE+'/menu/'+_restaurantId;
+  }catch(e){
+    /* graceful fallback: encode menu in the URL hash */
+    orderUrl=SITE+'/order.html#'+_packed;
+  }
+
+  if(btn){ btn.disabled=false; btn.textContent='Generate QR code →'; }
+
+  $('qrName').textContent=payload.r;
+  var f=$('orderUrlField'); if(f) f.value=orderUrl;
+  $('tableQRsWrap').classList.add('hidden');
+  var box=$('qrbox'); box.innerHTML='';
+  try{
+    new QRCode(box,{text:orderUrl, width:240, height:240, correctLevel:QRCode.CorrectLevel.M});
+  }catch(e){
+    box.innerHTML='<p class="err" style="max-width:210px">Menu is too large for a single QR. Shorten some descriptions and try again.</p>';
+  }
+  goStep('s-qr');
+}
+
+function downloadQR(){
+  var c=$('qrbox').querySelector('canvas'), img=$('qrbox').querySelector('img');
+  var url=c?c.toDataURL('image/png'):(img?img.src:null);
+  if(!url) return;
+  var a=document.createElement('a');
+  a.href=url; a.download=(state.restaurant||'tabletap')+'-qr.png'; a.click();
+}
+
+function previewAsCustomer(){
+  var url=_restaurantId ? SITE+'/menu/'+_restaurantId : SITE+'/order.html#'+_packed;
+  window.open(url,'_blank');
+}
+
+function copyOrderUrl(){
+  var f=$('orderUrlField'); if(!f) return;
+  navigator.clipboard.writeText(f.value).then(function(){
+    var btn=$('copyUrlBtn'); if(!btn) return;
+    btn.textContent='Copied!'; btn.style.color='var(--green)';
+    setTimeout(function(){ btn.textContent='Copy'; btn.style.color=''; }, 2000);
+  });
+}
+
+/* ============================================================
+   Table QR code generator
+   ============================================================ */
+function generateTableQRs(){
+  if(!_restaurantId && !_packed){ alert('Generate the main QR code first.'); return; }
+  var from=parseInt($('tFrom').value)||1;
+  var to=parseInt($('tTo').value)||10;
+  if(from<1||to<1||from>to){ alert('Enter a valid table range (From ≤ To).'); return; }
+  if(to-from>49){ alert('Maximum 50 tables at once — adjust the range.'); return; }
+
+  var grid=$('tableQRsGrid'); grid.innerHTML='';
+  var rn=$('tqrRname'); if(rn) rn.textContent=state.restaurant||'this restaurant';
+
+  for(var t=from;t<=to;t++){
+    /* clean URL: /menu/<id>?table=N — no long hash needed */
+    var url=_restaurantId
+      ? SITE+'/menu/'+_restaurantId+'?table='+t
+      : SITE+'/order.html?table='+t+'#'+_packed;
+
+    var cell=document.createElement('div');
+    cell.className='tqr-cell';
+
+    var label=document.createElement('div');
+    label.className='tqr-label';
+    label.textContent='Table '+t;
+
+    var qrDiv=document.createElement('div');
+    qrDiv.id='tqr-'+t;
+
+    var dlBtn=document.createElement('button');
+    dlBtn.className='btn btn-g btn-sm tqr-dl';
+    dlBtn.textContent='Download';
+    /* close over t and qrDiv */
+    dlBtn.onclick=(function(tableNum,qDiv){
+      return function(){ downloadTableQR(tableNum, qDiv); };
+    })(t, qrDiv);
+
+    cell.appendChild(label);
+    cell.appendChild(qrDiv);
+    cell.appendChild(dlBtn);
+    grid.appendChild(cell);
+
+    /* slight delay so DOM is painted before QR renders */
+    (function(div,u){ setTimeout(function(){
+      try{ new QRCode(div,{text:u, width:120, height:120, correctLevel:QRCode.CorrectLevel.M}); }
+      catch(e){ div.textContent='Error'; }
+    }, 0); })(qrDiv, url);
+  }
+
+  $('tableQRsWrap').classList.remove('hidden');
+  setTimeout(function(){ $('tableQRsWrap').scrollIntoView({behavior:'smooth',block:'start'}); },150);
+}
+
+function downloadTableQR(tableNum, qrDiv){
+  /* wait a tick in case QR is still rendering */
+  setTimeout(function(){
+    var canvas=qrDiv.querySelector('canvas'), img=qrDiv.querySelector('img');
+    var url=canvas?canvas.toDataURL('image/png'):(img?img.src:null);
+    if(!url){ alert('QR not ready yet — try again in a moment.'); return; }
+    var a=document.createElement('a');
+    a.href=url; a.download=(state.restaurant||'restaurant')+'-table-'+tableNum+'-qr.png'; a.click();
+  }, 80);
+}
+
+function printTableQRs(){
+  var grid=$('tableQRsGrid');
+  if(!grid||!grid.children.length){ alert('Generate the table QR codes first.'); return; }
+
+  /* collect each cell as a data-URL so we can print without canvas restrictions */
+  var rows='';
+  Array.prototype.forEach.call(grid.children, function(cell){
+    var label=cell.querySelector('.tqr-label');
+    var canvas=cell.querySelector('canvas'), img=cell.querySelector('img');
+    var src=canvas?canvas.toDataURL('image/png'):(img?img.src:'');
+    rows+='<div class="pc"><div class="pl">'+(label?label.textContent:'')+'</div>'
+      +(src?'<img src="'+src+'" width="120" height="120"/>':'')+'</div>';
+  });
+
+  var win=window.open('','_blank','width=900,height=700');
+  win.document.write('<!DOCTYPE html><html><head><title>Table QR codes — '
+    +esc(state.restaurant)+'</title>'
+    +'<style>'
+    +'*{box-sizing:border-box;margin:0;padding:0}'
+    +'body{font-family:sans-serif;padding:24px;background:#fff}'
+    +'.header{font-family:serif;font-size:20px;font-weight:bold;margin-bottom:4px}'
+    +'.sub{font-size:13px;color:#666;margin-bottom:20px}'
+    +'.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:14px}'
+    +'.pc{text-align:center;border:1px solid #ddd;border-radius:10px;padding:14px 10px;break-inside:avoid}'
+    +'.pl{font-family:serif;font-size:15px;font-weight:bold;margin-bottom:10px}'
+    +'.pc img{display:block;margin:0 auto}'
+    +'.no-print{margin-bottom:16px}'
+    +'@media print{.no-print{display:none}}'
+    +'</style></head><body>'
+    +'<button class="no-print" onclick="window.print()" style="padding:9px 18px;font-size:14px;cursor:pointer">Print</button>'
+    +'<div class="header">'+esc(state.restaurant)+'</div>'
+    +'<div class="sub">Scan to order — TableTap · Each QR is unique to its table</div>'
+    +'<div class="grid">'+rows+'</div>'
+    +'</body></html>');
+  win.document.close();
+}
+</script>
+</body>
+</html>
