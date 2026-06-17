@@ -112,12 +112,12 @@ body { padding-top: var(--nav); padding-bottom: 80px; }
   <!-- ── STEP 2: Upload / Method ── -->
   <div id="s-upload" class="step-panel hidden">
     <div class="card">
-      <label class="fld">Photo of your menu</label>
+      <label class="fld">Photo or screenshot of your menu</label>
       <div class="drop-zone" id="drop" onclick="document.getElementById('file').click()">
         <div class="dz-ic">📷</div>
-        <p><strong>Tap to take a photo</strong> or upload<br>a picture of your printed menu</p>
+        <p><strong>Tap to take a photo</strong> or upload<br>a picture or screenshot of your menu</p>
       </div>
-      <input id="file" type="file" accept="image/*" capture="environment" class="hidden" onchange="onFile(event)"/>
+      <input id="file" type="file" accept="image/*" class="hidden" onchange="onFile(event)"/>
       <div id="prev" class="photo-prev hidden"></div>
     </div>
 
@@ -314,7 +314,7 @@ function onFile(e){
   reader.onload=function(){
     var img=new Image();
     img.onload=function(){
-      var w=img.width, h=img.height, max=2400;
+      var w=img.width, h=img.height, max=3600;
 
       /* If image fits within max and is a native browser format,
          send the original bytes — no re-encoding, no quality loss. */
@@ -331,8 +331,8 @@ function onFile(e){
       var c=$('work'); c.width=w; c.height=h;
       c.getContext('2d').drawImage(img,0,0,w,h);
 
-      /* JPEG at 0.95 — visually lossless, compact enough for Tesseract */
-      var url=c.toDataURL('image/jpeg',0.95);
+      /* JPEG at 0.98 — near-lossless, keeps text crisp for OCR */
+      var url=c.toDataURL('image/jpeg',0.98);
       state.imgB64=url.split(',')[1]; state.imgType='image/jpeg';
       $('prev').innerHTML='<img src="'+url+'" alt="Menu preview"/>';
       $('prev').classList.remove('hidden');
