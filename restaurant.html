@@ -48,10 +48,6 @@ body { padding-top: var(--nav); padding-bottom: 80px; }
   display: flex; align-items: center; padding: 0 2px;
 }
 .ocr-box:focus { background: #fff; border-color: var(--green); outline: none; box-shadow: 0 0 0 3px var(--green-lt); z-index: 2; }
-/* Confidence cues — mirrors how Lens/Translate flag uncertain reads
-   for human review instead of presenting every line as equally sure */
-.ocr-box-mid { background: rgba(212,137,58,.18); border-color: rgba(212,137,58,.6); color: #5a3b10; }
-.ocr-box-low { background: rgba(176,58,46,.18); border-color: rgba(176,58,46,.6); color: #5a1a14; }
 
 /* Items missing a price must be filled in before a QR can be generated */
 .epr.price-missing { border-color: #d33; background: rgba(221,51,51,.06); }
@@ -157,7 +153,7 @@ body { padding-top: var(--nav); padding-bottom: 80px; }
       <div class="method-group">
         <button id="localBtn" class="method-btn primary-method" disabled onclick="readMenuLocal()">
           <span class="method-icon">📍</span>
-          <div class="method-text"><strong>Read menu (OCR)</strong><span>Uses Tesseract OCR — works offline, on this device. Downloads ~15 MB once (higher-accuracy model).</span></div>
+          <div class="method-text"><strong>Read menu (OCR)</strong><span>Uses Tesseract OCR — works offline, on this device. Downloads ~5 MB once.</span></div>
         </button>
         <button id="manualBtn" class="method-btn" disabled onclick="skipToManual()">
           <span class="method-icon">✏️</span>
@@ -185,7 +181,6 @@ body { padding-top: var(--nav); padding-bottom: 80px; }
       <div id="confirmWrap" class="confirm-wrap mt">
         <img id="confirmImg" alt="Scanned menu"/>
       </div>
-      <p id="confirmHint" class="note" style="margin-top:8px;color:var(--amber)"></p>
       <p id="confirmStat" class="stat"></p>
     </div>
     <button class="btn btn-p btn-w mt" onclick="confirmScan()">✓ Looks correct — continue</button>
@@ -520,14 +515,9 @@ async function readMenuLocal(){
       return Tesseract.recognize(target,'eng',{
         tessedit_pageseg_mode:Tesseract.PSM.AUTO,
         preserve_interword_spaces:'1',
-        /* The "best" trained model is meaningfully more accurate than
-           the default "fast" one tesseract.js ships with — it costs a
-           bigger one-time download, which is the right trade for menu
-           text that's often small, italic, or in a stylised font. */
-        langPath:'https://cdn.jsdelivr.net/gh/tesseract-ocr/tessdata_best@main',
         logger:function(m){
           if(m.status==='loading tesseract core')            prog('Loading OCR engine…', pctFrom+Math.round(m.progress*(pctTo-pctFrom)*0.3));
-          else if(m.status==='loading language traineddata') prog('Downloading language model (~15 MB, one-time)…', pctFrom+Math.round(m.progress*(pctTo-pctFrom)*0.6));
+          else if(m.status==='loading language traineddata') prog('Downloading language model (~5 MB, one-time)…', pctFrom+Math.round(m.progress*(pctTo-pctFrom)*0.6));
           else if(m.status==='initializing api')             prog('Initialising…', pctFrom+Math.round((pctTo-pctFrom)*0.7));
           else if(m.status==='recognizing text')             prog('Reading your menu…', pctFrom+Math.round(m.progress*(pctTo-pctFrom)*0.3)+Math.round((pctTo-pctFrom)*0.7));
         }
@@ -554,7 +544,7 @@ async function readMenuLocal(){
       var rightLines=(rightPass.data.lines||[]).filter(function(l){return l.text&&l.text.trim();})
         .map(function(l){
           var b=l.bbox;
-          return {text:l.text, confidence:l.confidence, bbox:{x0:b.x0+gutter.x1, x1:b.x1+gutter.x1, y0:b.y0, y1:b.y1}};
+          return {text:l.text, bbox:{x0:b.x0+gutter.x1, x1:b.x1+gutter.x1, y0:b.y0, y1:b.y1}};
         });
       if(leftLines.length+rightLines.length >= lines.length*0.6){
         lines=leftLines.concat(rightLines);
@@ -630,12 +620,9 @@ function cropCanvas(srcCanvas, x0, x1){
   return c;
 }
 
-/* Upscale-if-small, deskew, denoise, then locally-adaptive (Sauvola)
-   binarisation. This mirrors the standard pipeline real high-accuracy
-   OCR tools use on photographed (not scanned) documents — a single
-   global threshold (old Otsu approach) falls apart under the uneven
-   lighting/glare a phone photo of a menu almost always has, and even
-   a couple of degrees of camera tilt measurably hurts recognition. */
+/* Grayscale + upscale-if-small + Otsu binarisation — the standard
+   pre-processing pass that makes Tesseract reliably read photographed
+   or screenshotted menus instead of just clean scans. */
 function preprocessForOcr(b64, type){
   return new Promise(function(resolve, reject){
     var img=new Image();
@@ -651,139 +638,42 @@ function preprocessForOcr(b64, type){
         if('imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality='high';
         ctx.drawImage(img,0,0,cw,ch);
 
-        var angle=estimateSkewAngle(c);
-        if(Math.abs(angle)>=0.7) c=rotateCanvas(c, -angle);
+        var imgData=ctx.getImageData(0,0,cw,ch);
+        var d=imgData.data, n=cw*ch;
+        var gray=new Uint8ClampedArray(n);
+        var hist=new Array(256).fill(0);
+        for(var i=0,p=0;i<d.length;i+=4,p++){
+          var g=(0.299*d[i]+0.587*d[i+1]+0.114*d[i+2])|0;
+          gray[p]=g; hist[g]++;
+        }
 
-        var w2=c.width, h2=c.height;
-        var imgData=c.getContext('2d').getImageData(0,0,w2,h2);
-        var d=imgData.data, n=w2*h2;
-        var gray=new Float32Array(n);
-        for(var i=0,p=0;i<d.length;i+=4,p++) gray[p]=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];
-
-        /* Skip the per-pixel median pass on pathologically large canvases
-           (e.g. a tall full-page screenshot) so OCR doesn't stall for ages. */
-        var denoised=(w2*h2>14000000) ? gray : median3x3(gray, w2, h2);
-        var bw=sauvolaThreshold(denoised, w2, h2);
+        /* Otsu's method — picks the threshold that best separates
+           text from background instead of a fixed guess. */
+        var total=n, sumAll=0;
+        for(var t=0;t<256;t++) sumAll+=t*hist[t];
+        var sumB=0, wB=0, maxVar=0, threshold=128;
+        for(var t2=0;t2<256;t2++){
+          wB+=hist[t2];
+          if(wB===0) continue;
+          var wF=total-wB;
+          if(wF===0) break;
+          sumB+=t2*hist[t2];
+          var mB=sumB/wB, mF=(sumAll-sumB)/wF;
+          var between=wB*wF*(mB-mF)*(mB-mF);
+          if(between>maxVar){ maxVar=between; threshold=t2; }
+        }
 
         for(var i2=0,p2=0;i2<d.length;i2+=4,p2++){
-          var v=bw[p2];
+          var v = gray[p2]>threshold ? 255 : 0;
           d[i2]=d[i2+1]=d[i2+2]=v;
         }
-        c.getContext('2d').putImageData(imgData,0,0);
+        ctx.putImageData(imgData,0,0);
         resolve(c);
       }catch(err){ reject(err); }
     };
     img.onerror=function(){ reject(new Error('image load failed')); };
     img.src='data:'+type+';base64,'+b64;
   });
-}
-
-/* Estimate camera tilt via the classic projection-profile method:
-   rotate the set of dark (ink) pixels by candidate angles and find
-   the angle where they bunch up most tightly into horizontal text
-   rows — that peak is the deskew angle. Run on a small downsample
-   so testing ~25 candidate angles stays fast. */
-function estimateSkewAngle(srcCanvas){
-  var sw=420, scale=sw/srcCanvas.width, sh=Math.max(1,Math.round(srcCanvas.height*scale));
-  if(sh>2000) return 0; // pathologically tall image — not worth the search
-  var c=document.createElement('canvas'); c.width=sw; c.height=sh;
-  var ctx=c.getContext('2d'); ctx.drawImage(srcCanvas,0,0,sw,sh);
-  var d=ctx.getImageData(0,0,sw,sh).data;
-  var pts=[];
-  for(var y=0;y<sh;y+=2){
-    for(var x=0;x<sw;x+=2){
-      var idx=(y*sw+x)*4;
-      var v=0.299*d[idx]+0.587*d[idx+1]+0.114*d[idx+2];
-      if(v<150) pts.push(x,y);
-    }
-  }
-  var nPts=pts.length/2;
-  if(nPts<60||nPts>60000) return 0; // too sparse to trust, or too noisy (likely a busy photo, not text)
-  var bestAngle=0, bestScore=-Infinity;
-  for(var aDeg=-6; aDeg<=6; aDeg+=0.5){
-    var rad=aDeg*Math.PI/180, sin=Math.sin(rad), cos=Math.cos(rad);
-    var buckets={};
-    for(var i=0;i<pts.length;i+=2){
-      var yr=Math.round((pts[i]*sin+pts[i+1]*cos)/3);
-      buckets[yr]=(buckets[yr]||0)+1;
-    }
-    var keys=Object.keys(buckets), sum=0;
-    for(var k=0;k<keys.length;k++) sum+=buckets[keys[k]];
-    var mean=sum/keys.length, varSum=0;
-    for(var k2=0;k2<keys.length;k2++){ var diff=buckets[keys[k2]]-mean; varSum+=diff*diff; }
-    var score=varSum/keys.length;
-    if(score>bestScore){ bestScore=score; bestAngle=aDeg; }
-  }
-  return bestAngle;
-}
-
-function rotateCanvas(srcCanvas, angleDeg){
-  var rad=angleDeg*Math.PI/180;
-  var w=srcCanvas.width, h=srcCanvas.height;
-  var newW=Math.round(Math.abs(w*Math.cos(rad))+Math.abs(h*Math.sin(rad)));
-  var newH=Math.round(Math.abs(w*Math.sin(rad))+Math.abs(h*Math.cos(rad)));
-  var c=document.createElement('canvas'); c.width=newW; c.height=newH;
-  var ctx=c.getContext('2d');
-  ctx.fillStyle='#fff'; ctx.fillRect(0,0,newW,newH);
-  ctx.translate(newW/2,newH/2);
-  ctx.rotate(rad);
-  ctx.drawImage(srcCanvas, -w/2, -h/2);
-  return c;
-}
-
-/* 3x3 median filter — knocks out the salt-and-pepper speckle that
-   phone-camera sensor noise and JPEG compression leave behind, which
-   otherwise gets mistaken for stray ink by the threshold step. */
-function median3x3(gray, w, h){
-  var out=new Float32Array(w*h);
-  for(var y=0;y<h;y++){
-    for(var x=0;x<w;x++){
-      var x0=x>0?x-1:0, x1=x<w-1?x+1:w-1, y0=y>0?y-1:0, y1=y<h-1?y+1:h-1;
-      var v0=gray[y0*w+x0],v1=gray[y0*w+x],v2=gray[y0*w+x1],
-          v3=gray[y*w+x0], v4=gray[y*w+x], v5=gray[y*w+x1],
-          v6=gray[y1*w+x0],v7=gray[y1*w+x],v8=gray[y1*w+x1];
-      var arr=[v0,v1,v2,v3,v4,v5,v6,v7,v8]; arr.sort(function(a,b){return a-b;});
-      out[y*w+x]=arr[4];
-    }
-  }
-  return out;
-}
-
-/* Sauvola's local-adaptive threshold: the cutoff at each pixel is
-   based on the mean/contrast of its own neighbourhood rather than one
-   fixed value for the whole image, so it copes with the shadows,
-   glare and uneven lighting a phone photo of a menu typically has —
-   the single global threshold (old Otsu approach) doesn't. Computed
-   via integral images so it stays roughly O(width*height). */
-function sauvolaThreshold(gray, w, h){
-  var win=Math.max(15, Math.round(w/35))|1, half=win>>1, k=0.2, R=128;
-  var W=w+1;
-  var sum=new Float64Array((w+1)*(h+1));
-  var sumSq=new Float64Array((w+1)*(h+1));
-  for(var y=0;y<h;y++){
-    var row=(y+1)*W, prow=y*W;
-    for(var x=0;x<w;x++){
-      var v=gray[y*w+x];
-      sum[row+x+1]=sum[row+x]+sum[prow+x+1]-sum[prow+x]+v;
-      sumSq[row+x+1]=sumSq[row+x]+sumSq[prow+x+1]-sumSq[prow+x]+v*v;
-    }
-  }
-  var out=new Uint8ClampedArray(w*h);
-  for(var y2=0;y2<h;y2++){
-    var y0=Math.max(0,y2-half), y1=Math.min(h-1,y2+half);
-    for(var x2=0;x2<w;x2++){
-      var x0=Math.max(0,x2-half), x1=Math.min(w-1,x2+half);
-      var area=(x1-x0+1)*(y1-y0+1);
-      var A=y0*W+x0, B=y0*W+(x1+1), C=(y1+1)*W+x0, D=(y1+1)*W+(x1+1);
-      var s1=sum[D]-sum[B]-sum[C]+sum[A];
-      var s2=sumSq[D]-sumSq[B]-sumSq[C]+sumSq[A];
-      var mean=s1/area;
-      var variance=Math.max(0, s2/area-mean*mean);
-      var thresh=mean*(1+k*((Math.sqrt(variance)/R)-1));
-      out[y2*w+x2]=gray[y2*w+x2]>thresh ? 255 : 0;
-    }
-  }
-  return out;
 }
 
 /* ============================================================
@@ -794,14 +684,9 @@ function sauvolaThreshold(gray, w, h){
 var _ocrLines=null, _ocrW=0, _ocrH=0;
 
 function showConfirmOverlay(lines, canvasW, canvasH){
-  _ocrLines = lines.map(function(l){ return {text:l.text.replace(/\n+$/,''), bbox:l.bbox, conf:(l.confidence==null?100:l.confidence), el:null}; });
+  _ocrLines = lines.map(function(l){ return {text:l.text.replace(/\n+$/,''), bbox:l.bbox, el:null}; });
   _ocrW=canvasW; _ocrH=canvasH;
-  var lowCount=_ocrLines.filter(function(l){return l.conf<65;}).length;
   $('confirmStat').textContent='';
-  var hint=$('confirmHint');
-  if(hint) hint.textContent = lowCount
-    ? lowCount+' line'+(lowCount>1?'s are':' is')+' highlighted in amber/red because the scanner wasn\'t confident about them — worth a closer look.'
-    : '';
 
   var img=$('confirmImg');
   img.onload=function(){ layoutConfirmOverlay(); };
@@ -811,7 +696,7 @@ function showConfirmOverlay(lines, canvasW, canvasH){
   Array.prototype.slice.call(wrap.querySelectorAll('.ocr-box')).forEach(function(b){ b.remove(); });
   _ocrLines.forEach(function(line){
     var box=document.createElement('div');
-    box.className='ocr-box'+(line.conf<45?' ocr-box-low':(line.conf<65?' ocr-box-mid':''));
+    box.className='ocr-box';
     box.contentEditable='true';
     box.spellcheck=false;
     box.textContent=line.text;
