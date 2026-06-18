@@ -207,9 +207,15 @@ function loadMenu(p){
   state.restaurant=p.r||'Menu';
   state.phone=p.p||'';
   state.currency=p.c||'£';
+  var sx=p.sx||{};
+  state.sectionNotes=sx;
   state.menu=(p.m||[]).map(function(it){
-    return {name:it.n, price:(it.pr==null?null:Number(it.pr)), desc:it.d||'', section:it.s||'Menu',
-      options:(it.o||[]).map(function(o){ return {name:o.n, price:(o.pr==null?0:Number(o.pr))}; })};
+    var secName=it.s||'Menu';
+    var shared=(sx[secName]&&sx[secName].o)||[];
+    var ownOpts=(it.o||[]).map(function(o){ return {name:o.n, price:(o.pr==null?0:Number(o.pr))}; });
+    var sharedOpts=shared.map(function(o){ return {name:o.n, price:(o.pr==null?0:Number(o.pr))}; });
+    return {name:it.n, price:(it.pr==null?null:Number(it.pr)), desc:it.d||'', section:secName,
+      tags:it.t||[], options:ownOpts.concat(sharedOpts)};
   });
   state.cart={};
   $('mName').textContent=state.restaurant;
@@ -219,12 +225,17 @@ function loadMenu(p){
 }
 
 function renderMenuList(){
-  var secs={};
-  state.menu.forEach(function(it,i){ (secs[it.section]=secs[it.section]||[]).push(i); });
+  var secs={}, order=[];
+  state.menu.forEach(function(it,i){
+    if(!secs[it.section]){ secs[it.section]=[]; order.push(it.section); }
+    secs[it.section].push(i);
+  });
   var host=$('menuList'); host.innerHTML='';
-  Object.keys(secs).forEach(function(sec){
+  order.forEach(function(sec){
     var card=document.createElement('div'); card.className='card'; card.style.cssText='padding:4px 18px 12px;margin-bottom:14px';
     var h=document.createElement('div'); h.className='sec-h'; h.textContent=sec; card.appendChild(h);
+    var note=state.sectionNotes&&state.sectionNotes[sec]&&state.sectionNotes[sec].nt;
+    if(note){ var n=document.createElement('div'); n.className='sec-note'; n.textContent=note; card.appendChild(n); }
     secs[sec].forEach(function(i){ card.appendChild(buildItemBlock(i)); });
     host.appendChild(card);
   });
@@ -236,7 +247,8 @@ function buildItemBlock(i){
 
   var row=document.createElement('div'); row.className='item';
   var info=document.createElement('div'); info.className='info';
-  info.innerHTML='<div class="nm">'+esc(it.name)+'</div>'
+  var tagsHTML=(it.tags&&it.tags.length)?'<div class="tags">'+it.tags.map(function(t){return '<span class="tagb">'+esc(t)+'</span>';}).join('')+'</div>':'';
+  info.innerHTML='<div class="nm">'+esc(it.name)+'</div>'+tagsHTML
     +(it.desc?'<div class="ds">'+esc(it.desc)+'</div>':'')
     +'<div class="pr">'+(it.price==null?'—':money(it.price))+'</div>';
   var ctl=document.createElement('div'); ctl.id='ctl-'+i;

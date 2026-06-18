@@ -49,15 +49,28 @@ body { padding-top: var(--nav); padding-bottom: 80px; }
 .tqr-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; flex-wrap: wrap; gap: 10px; }
 .tqr-header h3 { font-family: 'Playfair Display', serif; font-size: 18px; margin: 0; }
 
-/* Menu editor: item blocks with description + options */
-.item-edit { border-bottom: 1px solid var(--bd); padding: 12px 0; }
-.item-edit:last-child { border-bottom: 0; }
+/* Menu editor: sections containing item blocks with description, tags + options */
+.sec-block { margin-bottom: 26px; }
+.sec-block-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 2px; }
+.sec-name-inp { font-family: 'Playfair Display', Georgia, serif; font-style: italic; font-size: 17px; font-weight: 400; border: 0; background: transparent; color: var(--ink-2); padding: 4px 2px; flex: 1; min-width: 0; }
+.sec-name-inp:focus { outline: none; border-bottom: 1.5px solid var(--green); }
+.sec-del { font-size: 12px; color: var(--muted); background: none; border: 0; cursor: pointer; text-decoration: underline; flex-shrink: 0; }
+.sec-note-inp { width: 100%; font-size: 12.5px; color: var(--muted); border: 1px dashed var(--bd-md); background: transparent; border-radius: 7px; padding: 7px 9px; margin-bottom: 10px; }
+.sec-opt-block { background: var(--surface); border: 1px solid var(--bd); border-radius: var(--r-sm); padding: 10px 12px; margin-bottom: 12px; }
+.sec-opt-label { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); margin: 0 0 6px 2px; }
+.add-sec-btn { margin-top: 6px; }
+
+.item-edit { border: 1px solid var(--bd); border-radius: var(--r-sm); padding: 12px 12px 10px; margin-bottom: 10px; background: var(--surface); }
 .item-edit .editrow { border-bottom: 0; padding: 0 0 7px; }
 .desc-inp { width: 100%; margin-bottom: 7px; }
+.tag-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.tag-chip { display: flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; color: var(--green); background: var(--green-lt); border-radius: 999px; padding: 4px 6px 4px 10px; }
+.tag-chip button { border: 0; background: none; color: var(--green); cursor: pointer; font-size: 12px; line-height: 1; padding: 0; }
+.tag-add { font-size: 11.5px; font-weight: 600; color: var(--muted); background: transparent; border: 1.5px dashed var(--bd-md); border-radius: 999px; padding: 4px 10px; cursor: pointer; }
 .opt-list { margin-left: 2px; }
 .opt-row { display: flex; gap: 8px; align-items: center; padding: 5px 0; }
-.opt-row .oname { flex: 1; }
-.opt-row .oprice { width: 78px; }
+.opt-row .oname, .opt-row .sec-oname { flex: 1; }
+.opt-row .oprice, .opt-row .sec-oprice { width: 78px; }
 .opt-add-btn { margin-top: 4px; }
 </style>
 </head>
@@ -165,9 +178,8 @@ body { padding-top: var(--nav); padding-bottom: 80px; }
         <h2 style="font-size:18px">Review your menu</h2>
         <span id="reviewPill" class="pill">Looks good — fix anything that's off</span>
       </div>
-      <p class="note">Tap any field to edit it. Hit ✕ to remove something. Add anything that got missed.</p>
+      <p class="note">Grouped the way your menu is — tap any field to edit, add tags, prices, or extras tied to a dish or to a whole section (like "gluten free +£2").</p>
       <div id="editor" style="margin-top:12px"></div>
-      <button class="btn btn-g btn-sm mt" onclick="addItem()">＋ Add an item</button>
     </div>
     <button class="btn btn-p btn-w mt" id="makeQrBtn" onclick="makeQR()">Generate QR code →</button>
     <button class="btn btn-g btn-w mt" onclick="goStep('s-upload')">← Back to menu</button>
@@ -265,7 +277,9 @@ body { padding-top: var(--nav); padding-bottom: 80px; }
 var state = {
   restaurant:'', phone:'', currency:'£',
   imgB64:null, imgType:'image/jpeg',
-  menu:[], cart:{}, lastOrderText:''
+  /* menu items hold a sectionId pointing into sections; sections carry the display name plus
+     a note and shared add-ons that apply to every item under them */
+  menu:[], sections:[], cart:{}, lastOrderText:''
 };
 var $ = function(id){ return document.getElementById(id); };
 function money(n){ return state.currency + (Number(n)||0).toFixed(2); }
@@ -379,13 +393,16 @@ async function readMenu(){
 
   var prompt="You are a menu digitiser. Read this photo of a restaurant menu and extract EVERY food and drink item — scan the whole image methodically, section by section, and do not stop early or skip anything. "
     +"Respond with ONLY valid JSON and nothing else — no markdown, no commentary. Use exactly this schema:\n"
-    +'{"items":[{"name":"string","price":number_or_null,"desc":"string","section":"string","options":[{"name":"string","price":number_or_null}]}]}\n'
+    +'{"items":[{"name":"string","price":number_or_null,"desc":"string","section":"string","tags":["string"],"options":[{"name":"string","price":number_or_null}]}],'
+    +'"sections":[{"name":"string","note":"string","options":[{"name":"string","price":number_or_null}]}]}\n'
     +"Rules: price is a plain number with no currency symbol; null if not shown. "
     +"desc is a short description of the dish itself (max ~12 words) or empty string. "
     +"section is the heading the item sits under (e.g. Starters, Mains, Drinks); if none use \"Menu\". "
-    +"options is for add-ons, swaps or modifiers tied to THAT item — lines like '+ Mozzarella', 'Add chicken', 'Make it Matriciana by adding chilli', 'Sicilian sausage, fresh fennel' (a topping choice), or notes like 'Vegan cheese available' / 'Gluten free available'. "
-    +"Each of those belongs as one entry in the options array of the dish it modifies (with its own price if one is shown, otherwise null) — never as its own top-level item in the items array. "
-    +"A real top-level item is a distinct named dish or drink with its own base price. "
+    +"tags are short dietary/info labels printed right on that dish, like 'V', 'VG', 'GF', 'Spicy', 'Sharing' — omit if none shown. "
+    +"items[].options is ONLY for add-ons, swaps or modifiers tied to ONE specific dish — e.g. 'Make it Matriciana by adding chilli £2', a choice of two fillings for one dish, or a price to upgrade that one dish to a main. "
+    +"sections is for rules that apply to an ENTIRE section rather than one dish — e.g. a line printed once under a heading like 'Gluten free base +£2' or 'Extra toppings £1.50 each' that applies to every pizza, or 'Vegan cheese available on request' that applies to a whole group. "
+    +"Put the priced, selectable ones (gluten free base, extra topping, etc.) in that section's options array; put plain non-priced notes (timing, 'ask your server', 'vegan cheese available') in that section's note string instead. Only include a section in the sections array if it actually has a note or shared options — most sections won't. "
+    +"A real top-level item is a distinct named dish or drink with its own base price — never list an add-on, swap or section-wide rule as its own item. "
     +"Keep names exactly as written. Do not invent items, but do not omit any either.";
 
   try{
@@ -401,10 +418,7 @@ async function readMenu(){
     var parsed=JSON.parse(json);
     var items=(parsed.items||[]).filter(function(it){return it&&it.name;});
     if(!items.length) throw new Error('no items');
-    state.menu=items.map(function(it){
-      return {name:String(it.name).trim(), price:(it.price==null?null:Number(it.price)), desc:(it.desc?String(it.desc).trim():''), section:(it.section?String(it.section).trim():'Menu'),
-        options:(Array.isArray(it.options)?it.options:[]).filter(function(o){return o&&o.name;}).map(function(o){return {name:String(o.name).trim(), price:(o.price==null?null:Number(o.price))};})};
-    });
+    applyParsedMenu(items, parsed.sections);
     var pill=$('reviewPill'); if(pill) pill.textContent='Looks good — fix anything that\'s off';
     renderEditor(); goStep('s-review');
   }catch(err){
@@ -413,6 +427,52 @@ async function readMenu(){
     btn.querySelector('strong').textContent='Read with AI (recommended)';
     syncUpload();
   }
+}
+
+function toOptions(raw){
+  return (Array.isArray(raw)?raw:[]).filter(function(o){return o&&o.name;}).map(function(o){
+    return {name:String(o.name).trim(), price:(o.price==null?null:Number(o.price))};
+  });
+}
+
+/* ============================================================
+   Shared menu model: items reference a sectionId; sections carry
+   the display name plus a note and shared add-ons for every item
+   under them. Used by every read path (AI / local OCR / manual).
+   ============================================================ */
+function nextSectionId(){ state._secSeq=(state._secSeq||0)+1; return 'sec'+state._secSeq; }
+
+function applyParsedMenu(rawItems, rawSections){
+  state.sections=[];
+  var byName={};
+  function sectionFor(name){
+    name=(name?String(name).trim():'')||'Menu';
+    if(!byName[name]){
+      var id=nextSectionId();
+      byName[name]=id;
+      state.sections.push({id:id, name:name, note:'', options:[]});
+    }
+    return byName[name];
+  }
+  state.menu=(rawItems||[]).map(function(raw){
+    return {
+      name:String(raw.name).trim(),
+      price:(raw.price==null?null:Number(raw.price)),
+      desc:raw.desc?String(raw.desc).trim():'',
+      tags:(Array.isArray(raw.tags)?raw.tags:[]).filter(function(t){return t;}).map(function(t){return String(t).trim();}),
+      options:toOptions(raw.options),
+      sectionId:sectionFor(raw.section)
+    };
+  });
+  (Array.isArray(rawSections)?rawSections:[]).forEach(function(s){
+    if(!s||!s.name) return;
+    var id=sectionFor(s.name);
+    var sec=state.sections.filter(function(x){return x.id===id;})[0];
+    var note=s.note?String(s.note).trim():'';
+    var opts=toOptions(s.options);
+    if(note) sec.note=note;
+    if(opts.length) sec.options=opts;
+  });
 }
 
 function extractJSON(t){
@@ -451,9 +511,12 @@ async function readMenuLocal(){
     prog('Done — reviewing results', 100);
     var text=result.data.text;
     if(!text||text.trim().length<5) throw new Error('no text');
-    var items=parseOcrToMenu(text);
-    if(!items.length) throw new Error('no items');
-    state.menu=items;
+    var parsed=parseOcrToMenu(text);
+    if(!parsed.items.length) throw new Error('no items');
+    var sectionsRaw=Object.keys(parsed.sectionMeta).map(function(n){
+      var m=parsed.sectionMeta[n]; return {name:n, note:m.note, options:m.options};
+    });
+    applyParsedMenu(parsed.items, sectionsRaw);
     var pill=$('reviewPill'); if(pill) pill.textContent='OCR read it — check it over';
     renderEditor(); goStep('s-review');
   }catch(err){
@@ -474,18 +537,31 @@ function parseOcrToMenu(raw){
   var SEC_RE=/^(starters?|mains?|desserts?|drinks?|sides?|breakfast|lunch|dinner|snacks?|soups?|salads?|pizza|pasta|burgers?|specials?|cocktails?|wines?|beers?|soft\s+drinks?|hot\s+drinks?|appetiz|seafood|vegetarian|vegan|kids?|children|sharing|extras?|sauces?)/i;
   /* lines describing an add-on / swap / modifier for the dish above them, not a dish of their own */
   var MOD_RE=/^[+]|^make\s+it\b|^add(?:ing)?\b|^swap\b|^upgrade\b|available\b/i;
+  /* phrasing that (in most restaurants' menus) applies to a whole section rather than one dish —
+     e.g. a topping/allergen rule printed once under a heading and meant for every item below it */
+  var SECTION_MOD_RE=/gluten\s*free|vegan\s*cheese|extra\s*topping|allerg|please\s+(ask|inform|let)|ask\s+(your\s+)?(server|staff)|on\s+request/i;
   function xprice(l){ var m=l.match(PRICE_RE); if(!m) return null; var n=parseFloat((m[1]||m[2]).replace(',','.')); return(n>0&&n<999)?n:null; }
   function strip(l){ return l.replace(PRICE_RE,'').replace(/\s+/g,' ').replace(/^[\s\-–—·•.]+|[\s\-–—·•.]+$/g,'').trim(); }
   function isSec(l){ var c=l.replace(/[-_=*•·]/g,'').trim(); if(c.length<2||c.length>55||xprice(c)!==null) return false; if(SEC_RE.test(c)) return true; if(c===c.toUpperCase()&&/[A-Z]/.test(c)&&!/\d/.test(c)) return true; return false; }
   function isMod(l){ return MOD_RE.test(l.replace(/^[\s\-–—·•.]+/,'')); }
-  var items=[],sec='Menu',i=0;
+  var items=[],sectionMeta={},sec='Menu',i=0;
+  function secMeta(name){ return sectionMeta[name]=sectionMeta[name]||{note:'',options:[]}; }
   while(i<lines.length){
     var line=lines[i];
     if(isSec(line)){ sec=line.replace(/[-_=*•·]/g,'').trim(); i++; continue; }
-    if(isMod(line)&&items.length){
-      var lastItem=items[items.length-1];
+    if(isMod(line)){
       var op=xprice(line), onm=strip(line).replace(/^[+]\s*/,'');
-      if(onm.length>1){ lastItem.options=lastItem.options||[]; lastItem.options.push({name:onm,price:op}); }
+      if(onm.length>1){
+        if(SECTION_MOD_RE.test(line)){
+          var m=secMeta(sec);
+          if(op!==null) m.options.push({name:onm,price:op});
+          else m.note=(m.note?m.note+' · ':'')+onm;
+        }else if(items.length){
+          var lastItem=items[items.length-1];
+          lastItem.options=lastItem.options||[];
+          lastItem.options.push({name:onm,price:op});
+        }
+      }
       i++; continue;
     }
     var p=xprice(line);
@@ -494,103 +570,225 @@ function parseOcrToMenu(raw){
       if(nm.length>1){
         var desc=''; var nx=lines[i+1]||'';
         if(nx&&!isSec(nx)&&!isMod(nx)&&xprice(nx)===null&&nx.length>3&&nx.length<120){ desc=nx; i++; }
-        items.push({name:nm,price:p,desc:desc,section:sec,options:[]});
+        items.push({name:nm,price:p,desc:desc,section:sec,tags:[],options:[]});
       }
       i++; continue;
     }
     var np=xprice(lines[i+1]||'');
-    if(np!==null&&!isSec(line)&&!isMod(line)&&line.length>1&&line.length<80){ items.push({name:line,price:np,desc:'',section:sec,options:[]}); i+=2; continue; }
+    if(np!==null&&!isSec(line)&&!isMod(line)&&line.length>1&&line.length<80){ items.push({name:line,price:np,desc:'',section:sec,tags:[],options:[]}); i+=2; continue; }
     i++;
   }
-  return items;
+  return {items:items, sectionMeta:sectionMeta};
 }
 
 /* ============================================================
    Step 2 → 3: Manual entry
    ============================================================ */
 function skipToManual(){
-  if(!state.menu.length) state.menu.push({name:'',price:null,desc:'',section:'Menu',options:[]});
+  if(!state.menu.length) applyParsedMenu([{name:'',price:null,desc:'',section:'Menu',tags:[],options:[]}], []);
   var pill=$('reviewPill'); if(pill) pill.textContent='Type in your menu below';
   renderEditor(); goStep('s-review');
 }
 
 /* ============================================================
-   Step 3: Menu editor
+   Step 3: Menu editor — grouped by section
    ============================================================ */
 function renderEditor(){
   var box=$('editor'); box.innerHTML='';
-  state.menu.forEach(function(it,i){
-    var wrap=document.createElement('div'); wrap.className='item-edit';
+  state.sections.forEach(function(sec){ box.appendChild(buildSectionBlock(sec)); });
 
-    var row=document.createElement('div'); row.className='editrow';
-    row.innerHTML='<input class="enm inp" type="text" value="'+esc(it.name)+'" oninput="editName('+i+',this.value)" placeholder="Item name" aria-label="Item name"/>'
-      +'<input class="epr inp" type="text" inputmode="decimal" value="'+(it.price==null?'':it.price)+'" oninput="editPrice('+i+',this.value)" placeholder="Price" aria-label="Price"/>'
-      +'<button class="iconbtn" onclick="removeItem('+i+')" aria-label="Remove">✕</button>';
-    wrap.appendChild(row);
-
-    var desc=document.createElement('input');
-    desc.className='inp desc-inp'; desc.type='text'; desc.placeholder='Description (optional)';
-    desc.setAttribute('aria-label','Description'); desc.value=it.desc||'';
-    desc.oninput=function(){ editDesc(i,this.value); };
-    wrap.appendChild(desc);
-
-    var optList=document.createElement('div'); optList.className='opt-list';
-    (it.options||[]).forEach(function(opt,j){
-      var orow=document.createElement('div'); orow.className='opt-row';
-      orow.innerHTML='<input class="inp oname" type="text" placeholder="Option / add-on name" value="'+esc(opt.name)+'" aria-label="Option name"/>'
-        +'<input class="inp oprice" type="text" inputmode="decimal" placeholder="+price" value="'+(opt.price==null?'':opt.price)+'" aria-label="Option price"/>'
-        +'<button class="iconbtn" aria-label="Remove option">✕</button>';
-      orow.querySelector('.oname').oninput=function(){ editOptionName(i,j,this.value); };
-      orow.querySelector('.oprice').oninput=function(){ editOptionPrice(i,j,this.value); };
-      orow.querySelector('.iconbtn').onclick=function(){ removeOption(i,j); };
-      optList.appendChild(orow);
-    });
-    wrap.appendChild(optList);
-
-    var addOptBtn=document.createElement('button');
-    addOptBtn.type='button'; addOptBtn.className='btn btn-g btn-sm opt-add-btn';
-    addOptBtn.textContent='+ Add option / add-on';
-    addOptBtn.onclick=function(){ addOption(i); };
-    wrap.appendChild(addOptBtn);
-
-    box.appendChild(wrap);
-  });
+  var addSecBtn=document.createElement('button');
+  addSecBtn.type='button'; addSecBtn.className='btn btn-g btn-w add-sec-btn';
+  addSecBtn.textContent='+ Add section';
+  addSecBtn.onclick=addSection;
+  box.appendChild(addSecBtn);
 }
+
+function buildSectionBlock(sec){
+  var block=document.createElement('div'); block.className='sec-block'; block.setAttribute('data-sid',sec.id);
+
+  var head=document.createElement('div'); head.className='sec-block-head';
+  var nameInp=document.createElement('input'); nameInp.className='sec-name-inp';
+  nameInp.value=sec.name; nameInp.setAttribute('aria-label','Section name');
+  nameInp.oninput=function(){ sec.name=this.value; };
+  var delBtn=document.createElement('button'); delBtn.type='button'; delBtn.className='sec-del'; delBtn.textContent='Remove section';
+  delBtn.onclick=function(){ removeSection(sec.id); };
+  head.appendChild(nameInp); head.appendChild(delBtn);
+  block.appendChild(head);
+
+  var noteInp=document.createElement('input');
+  noteInp.className='inp sec-note-inp'; noteInp.placeholder='Note for the whole section (optional) — e.g. allergens, timing';
+  noteInp.value=sec.note||''; noteInp.setAttribute('aria-label','Section note');
+  noteInp.oninput=function(){ sec.note=this.value; };
+  block.appendChild(noteInp);
+
+  var optBlock=document.createElement('div'); optBlock.className='sec-opt-block';
+  var lbl=document.createElement('div'); lbl.className='sec-opt-label';
+  lbl.textContent='Shared add-ons for every item in this section';
+  optBlock.appendChild(lbl);
+  (sec.options||[]).forEach(function(opt,j){
+    var orow=document.createElement('div'); orow.className='opt-row';
+    orow.innerHTML='<input class="inp sec-oname" type="text" placeholder="Add-on name" value="'+esc(opt.name)+'" aria-label="Shared add-on name"/>'
+      +'<input class="inp sec-oprice" type="text" inputmode="decimal" placeholder="+price" value="'+(opt.price==null?'':opt.price)+'" aria-label="Shared add-on price"/>'
+      +'<button class="iconbtn" aria-label="Remove shared add-on">✕</button>';
+    orow.querySelector('.sec-oname').oninput=function(){ opt.name=this.value; };
+    orow.querySelector('.sec-oprice').oninput=function(){ var n=parseFloat(this.value); opt.price=(this.value===''||isNaN(n))?null:n; };
+    orow.querySelector('.iconbtn').onclick=function(){ sec.options.splice(j,1); renderEditor(); };
+    optBlock.appendChild(orow);
+  });
+  var addSecOptBtn=document.createElement('button');
+  addSecOptBtn.type='button'; addSecOptBtn.className='btn btn-g btn-sm opt-add-btn';
+  addSecOptBtn.textContent='+ Add shared add-on';
+  addSecOptBtn.onclick=function(){
+    sec.options=sec.options||[]; sec.options.push({name:'',price:null});
+    renderEditor();
+    var blk=$('editor').querySelector('.sec-block[data-sid="'+sec.id+'"]');
+    if(blk){ var inputs=blk.querySelectorAll('.sec-oname'); if(inputs.length) inputs[inputs.length-1].focus(); }
+  };
+  optBlock.appendChild(addSecOptBtn);
+  block.appendChild(optBlock);
+
+  state.menu.forEach(function(it,i){
+    if(it.sectionId!==sec.id) return;
+    block.appendChild(buildItemEditBlock(it,i));
+  });
+
+  var addItemBtn=document.createElement('button');
+  addItemBtn.type='button'; addItemBtn.className='btn btn-g btn-sm';
+  addItemBtn.textContent='+ Add item to this section';
+  addItemBtn.onclick=function(){ addItem(sec.id); };
+  block.appendChild(addItemBtn);
+
+  return block;
+}
+
+function buildItemEditBlock(it,i){
+  var wrap=document.createElement('div'); wrap.className='item-edit'; wrap.setAttribute('data-idx',i);
+
+  var row=document.createElement('div'); row.className='editrow';
+  row.innerHTML='<input class="enm inp" type="text" value="'+esc(it.name)+'" oninput="editName('+i+',this.value)" placeholder="Item name" aria-label="Item name"/>'
+    +'<input class="epr inp" type="text" inputmode="decimal" value="'+(it.price==null?'':it.price)+'" oninput="editPrice('+i+',this.value)" placeholder="Price" aria-label="Price"/>'
+    +'<button class="iconbtn" onclick="removeItem('+i+')" aria-label="Remove">✕</button>';
+  wrap.appendChild(row);
+
+  var desc=document.createElement('input');
+  desc.className='inp desc-inp'; desc.type='text'; desc.placeholder='Description (optional)';
+  desc.setAttribute('aria-label','Description'); desc.value=it.desc||'';
+  desc.oninput=function(){ editDesc(i,this.value); };
+  wrap.appendChild(desc);
+
+  var tagRow=document.createElement('div'); tagRow.className='tag-row';
+  (it.tags||[]).forEach(function(tag,j){
+    var chip=document.createElement('span'); chip.className='tag-chip';
+    chip.appendChild(document.createTextNode(tag+' '));
+    var rm=document.createElement('button'); rm.type='button'; rm.textContent='✕'; rm.setAttribute('aria-label','Remove tag');
+    rm.onclick=function(){ removeTag(i,j); };
+    chip.appendChild(rm);
+    tagRow.appendChild(chip);
+  });
+  var addTagBtn=document.createElement('button');
+  addTagBtn.type='button'; addTagBtn.className='tag-add'; addTagBtn.textContent='+ tag';
+  addTagBtn.onclick=function(){ addTag(i); };
+  tagRow.appendChild(addTagBtn);
+  wrap.appendChild(tagRow);
+
+  var optList=document.createElement('div'); optList.className='opt-list';
+  (it.options||[]).forEach(function(opt,j){
+    var orow=document.createElement('div'); orow.className='opt-row';
+    orow.innerHTML='<input class="inp oname" type="text" placeholder="Option / add-on name" value="'+esc(opt.name)+'" aria-label="Option name"/>'
+      +'<input class="inp oprice" type="text" inputmode="decimal" placeholder="+price" value="'+(opt.price==null?'':opt.price)+'" aria-label="Option price"/>'
+      +'<button class="iconbtn" aria-label="Remove option">✕</button>';
+    orow.querySelector('.oname').oninput=function(){ editOptionName(i,j,this.value); };
+    orow.querySelector('.oprice').oninput=function(){ editOptionPrice(i,j,this.value); };
+    orow.querySelector('.iconbtn').onclick=function(){ removeOption(i,j); };
+    optList.appendChild(orow);
+  });
+  wrap.appendChild(optList);
+
+  var addOptBtn=document.createElement('button');
+  addOptBtn.type='button'; addOptBtn.className='btn btn-g btn-sm opt-add-btn';
+  addOptBtn.textContent='+ Add option / add-on';
+  addOptBtn.onclick=function(){ addOption(i); };
+  wrap.appendChild(addOptBtn);
+
+  return wrap;
+}
+
 function editName(i,v){ state.menu[i].name=v; }
 function editPrice(i,v){ var n=parseFloat(v); state.menu[i].price=isNaN(n)?null:n; }
 function editDesc(i,v){ state.menu[i].desc=v; }
 function removeItem(i){ state.menu.splice(i,1); renderEditor(); }
-function addItem(){
-  state.menu.push({name:'',price:null,desc:'',section:'Menu',options:[]});
+function addItem(sectionId){
+  state.menu.push({name:'',price:null,desc:'',tags:[],options:[],sectionId:sectionId});
   renderEditor();
-  var last=$('editor').querySelector('.item-edit:last-child .enm');
-  if(last) last.focus();
+  var blk=$('editor').querySelector('.item-edit[data-idx="'+(state.menu.length-1)+'"] .enm');
+  if(blk) blk.focus();
 }
 function addOption(i){
   state.menu[i].options=state.menu[i].options||[];
   state.menu[i].options.push({name:'',price:null});
   renderEditor();
-  var rows=$('editor').querySelectorAll('.item-edit'); var blk=rows[i];
+  var blk=$('editor').querySelector('.item-edit[data-idx="'+i+'"]');
   if(blk){ var onames=blk.querySelectorAll('.oname'); if(onames.length) onames[onames.length-1].focus(); }
 }
 function editOptionName(i,j,v){ state.menu[i].options[j].name=v; }
 function editOptionPrice(i,j,v){ var n=parseFloat(v); state.menu[i].options[j].price=(v===''||isNaN(n))?null:n; }
 function removeOption(i,j){ state.menu[i].options.splice(j,1); renderEditor(); }
+
+function addTag(i){
+  var t=window.prompt('Add a tag for this item (e.g. V, VG, GF, Spicy, Sharing)');
+  if(t&&t.trim()){ state.menu[i].tags=state.menu[i].tags||[]; state.menu[i].tags.push(t.trim()); renderEditor(); }
+}
+function removeTag(i,j){ state.menu[i].tags.splice(j,1); renderEditor(); }
+
+function addSection(){
+  var id=nextSectionId();
+  state.sections.push({id:id,name:'New section',note:'',options:[]});
+  state.menu.push({name:'',price:null,desc:'',tags:[],options:[],sectionId:id});
+  renderEditor();
+  var inp=$('editor').querySelector('.sec-block[data-sid="'+id+'"] .sec-name-inp');
+  if(inp){ inp.focus(); inp.select(); }
+}
+function removeSection(id){
+  var sec=state.sections.filter(function(s){return s.id===id;})[0];
+  var count=state.menu.filter(function(it){return it.sectionId===id;}).length;
+  if(count && !window.confirm('Remove "'+(sec?sec.name:'this section')+'" and its '+count+' item'+(count===1?'':'s')+'?')) return;
+  state.menu=state.menu.filter(function(it){return it.sectionId!==id;});
+  state.sections=state.sections.filter(function(s){return s.id!==id;});
+  renderEditor();
+}
+
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 /* ============================================================
    Step 4: QR generation
    ============================================================ */
 function buildPayload(){
-  return {
+  var sx={};
+  state.sections.forEach(function(sec){
+    var opts=(sec.options||[]).filter(function(o){return o&&o.name;});
+    var note=(sec.note||'').trim();
+    if(note||opts.length){
+      sx[sec.name||'Menu']={
+        nt:note,
+        o:opts.map(function(o){return {n:o.name, pr:(o.price==null?null:o.price)};})
+      };
+    }
+  });
+  var payload={
     r:state.restaurant||'Our Menu', p:state.phone, c:state.currency,
     m:state.menu.filter(function(it){return it.name;}).map(function(it){
-      var out={n:it.name, pr:(it.price==null?null:it.price), d:it.desc||'', s:it.section||'Menu'};
+      var sec=state.sections.filter(function(s){return s.id===it.sectionId;})[0];
+      var out={n:it.name, pr:(it.price==null?null:it.price), d:it.desc||'', s:(sec&&sec.name)||'Menu'};
+      var tags=(it.tags||[]).filter(function(t){return t;});
+      if(tags.length) out.t=tags;
       var opts=(it.options||[]).filter(function(o){return o&&o.name;});
       if(opts.length) out.o=opts.map(function(o){return {n:o.name, pr:(o.price==null?null:o.price)};});
       return out;
     })
   };
+  if(Object.keys(sx).length) payload.sx=sx;
+  return payload;
 }
 
 /* stored when QR is generated, reused for table QRs */
