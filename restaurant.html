@@ -544,7 +544,7 @@ async function readMenuLocal(){
       var rightLines=(rightPass.data.lines||[]).filter(function(l){return l.text&&l.text.trim();})
         .map(function(l){
           var b=l.bbox;
-          return {text:l.text, bbox:{x0:b.x0+gutter.x1, x1:b.x1+gutter.x1, y0:b.y0, y1:b.y1}};
+          return {text:l.text, confidence:l.confidence, bbox:{x0:b.x0+gutter.x1, x1:b.x1+gutter.x1, y0:b.y0, y1:b.y1}};
         });
       if(leftLines.length+rightLines.length >= lines.length*0.6){
         lines=leftLines.concat(rightLines);
@@ -553,6 +553,16 @@ async function readMenuLocal(){
 
     prog('Done — reviewing results', 100);
     if(!lines.length) throw new Error('no lines');
+
+    /* If the photo was too blurry/dark/distorted to actually read, Tesseract
+       doesn't fail cleanly — it returns confident-looking nonsense ("RS
+       TETE100", "m@ﬁﬁ\".'"). Bail out to the normal "couldn't read that"
+       message instead of dumping dozens of garbage rows into the review
+       screen for the restaurant to clean up by hand. */
+    var avgConf=lines.reduce(function(s,l){return s+(l.confidence==null?70:l.confidence);},0)/lines.length;
+    var gibberishCount=lines.filter(function(l){return isGibberishLine(l.text);}).length;
+    if(avgConf<40 || gibberishCount/lines.length>0.45) throw new Error('scan quality too low');
+
     showConfirmOverlay(lines, canvas.width, canvas.height);
     goStep('s-confirm');
   }catch(err){
@@ -744,6 +754,31 @@ function confirmScan(){
   renderEditor(); goStep('s-review');
 }
 
+/* Catches OCR noise from illegible photos — text that's mostly tiny
+   fragments or symbol/ligature soup rather than real words. Used both
+   to bail out early on a fully-failed scan and to drop individual
+   junk lines from an otherwise readable one. */
+function isGibberishLine(raw){
+  var s=(raw||'').trim();
+  if(!s) return true;
+  var letters=(s.match(/[A-Za-zÀ-ÖØ-öø-ÿ]/g)||[]).length;
+  var total=s.replace(/\s/g,'').length;
+  if(total===0) return true;
+  var toks=s.split(/\s+/).filter(Boolean);
+  var shortToks=toks.filter(function(t){ return t.replace(/[^A-Za-zÀ-ÖØ-öø-ÿ0-9]/g,'').length<=2; }).length;
+  var shortRatio=toks.length ? shortToks/toks.length : 1;
+  /* A multi-word line that's mostly 1-2 character fragments
+     ("R ST Bciryeiand ;o") is noise, not a dish description. */
+  if(toks.length>=2 && shortRatio>0.55) return true;
+  /* A single blob that's mostly symbols/ligatures, not letters
+     ("m@ﬁﬁ\".'") */
+  if(toks.length===1 && (letters/total)<0.55 && total>=3) return true;
+  /* Letters glued straight onto a long digit run with nothing between
+     them ("TETE100") — not how real item names or prices look. */
+  if(/^[A-Za-z]{1,6}\d{3,}$/.test(s.replace(/\s/g,''))) return true;
+  return false;
+}
+
 function parseOcrToMenu(raw){
   var text=raw.replace(/\.{3,}/g,' ').replace(/_{3,}/g,' ').replace(/\|/g,'I')
               .replace(/([£$€])O(\d)/g,'$10$2').replace(/([£$€])\s*l(\d)/g,'$11$2');
@@ -792,6 +827,7 @@ function parseOcrToMenu(raw){
     var line=lines[i];
     if(isSec(line)){ sec=line.replace(/[-_=*•·]/g,'').trim(); i++; continue; }
     if(isNoise(line)){ i++; continue; }
+    if(isGibberishLine(line)){ i++; continue; }
     if(items.length && ADDON_RE.test(line.replace(/^[-•*]+\s*/,''))){
       var last=items[items.length-1];
       if(!last.addons) last.addons=[];
@@ -799,7 +835,7 @@ function parseOcrToMenu(raw){
       i++; continue;
     }
     var p=xprice(line);
-    if(p!==null){ var nm=cleanName(strip(line)); if(nm.length>1){ var desc=''; var nx=lines[i+1]||''; if(nx&&!isSec(nx)&&!isNoise(nx)&&xprice(nx)===null&&nx.length>3&&nx.length<120&&!ADDON_RE.test(nx)){ desc=nx; i++; } items.push({name:nm,price:p,desc:desc,section:sec,addons:[]}); } i++; continue; }
+    if(p!==null){ var nm=cleanName(strip(line)); if(nm.length>1){ var desc=''; var nx=lines[i+1]||''; if(nx&&!isSec(nx)&&!isNoise(nx)&&!isGibberishLine(nx)&&xprice(nx)===null&&nx.length>3&&nx.length<120&&!ADDON_RE.test(nx)){ desc=nx; i++; } items.push({name:nm,price:p,desc:desc,section:sec,addons:[]}); } i++; continue; }
     var np=xprice(lines[i+1]||'');
     if(np!==null&&!isSec(line)&&line.length>1&&line.length<80){ items.push({name:cleanName(line),price:np,desc:'',section:sec,addons:[]}); i+=2; continue; }
     /* No price on this line or the next — still a real menu entry
