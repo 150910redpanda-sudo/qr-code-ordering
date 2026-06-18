@@ -180,12 +180,21 @@ input[type=text]:focus,input[type=tel]:focus,select:focus,textarea:focus {
 .sec-h::after { content: ''; flex: 1; height: 1px; background: var(--bd); }
 
 /* ---- Menu items ---- */
-.item { display: flex; align-items: flex-start; gap: 12px; padding: 13px 0; border-bottom: 1px solid var(--bd); }
-.item:last-child { border-bottom: 0; }
+.item-block { border-bottom: 1px solid var(--bd); padding: 13px 0; }
+.item-block:last-child { border-bottom: 0; }
+.item { display: flex; align-items: flex-start; gap: 12px; }
 .item .info { flex: 1; min-width: 0; }
 .item .nm   { font-family: 'Playfair Display', Georgia, serif; font-weight: 700; font-size: 16px; }
 .item .ds   { color: var(--muted); font-size: 13px; margin-top: 2px; }
 .item .pr   { font-family: 'Space Mono', monospace; font-weight: 700; font-size: 14px; margin-top: 4px; white-space: nowrap; }
+
+/* ---- Selectable add-on options (customer view) ---- */
+.opt-pick { margin-top: 10px; padding: 10px 12px; background: var(--bg); border-radius: var(--r-sm); }
+.opt-pick label { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 13.5px; padding: 5px 0; cursor: pointer; }
+.opt-pick label input { margin: 0; }
+.cart-lines { margin-top: 4px; }
+.cart-line { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 7px 0; font-size: 13.5px; border-top: 1px dashed var(--bd); }
+.cart-line:first-child { border-top: 0; }
 
 /* ---- Qty stepper ---- */
 .step { display: flex; align-items: center; border: 1.5px solid var(--bd-str); border-radius: 999px; overflow: hidden; }
