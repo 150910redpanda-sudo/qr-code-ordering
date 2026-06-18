@@ -420,7 +420,7 @@ function onFile(e){
 function extractBrandColor(imgEl){
   state.theme.auto=true;
   try{
-    var sw=64, sh=64;
+    var sw=100, sh=100;
     var c=document.createElement('canvas'); c.width=sw; c.height=sh;
     var ctx=c.getContext('2d');
     ctx.drawImage(imgEl,0,0,sw,sh);
@@ -510,20 +510,48 @@ async function readMenuLocal(){
   try{
     prog('Preparing image for OCR…', 5);
     var canvas=await preprocessForOcr(state.imgB64, state.imgType);
-    var result=await Tesseract.recognize(canvas,'eng',{
-      tessedit_pageseg_mode:Tesseract.PSM.AUTO,
-      preserve_interword_spaces:'1',
-      logger:function(m){
-        if(m.status==='loading tesseract core')            prog('Loading OCR engine…',               5+Math.round(m.progress*20));
-        else if(m.status==='loading language traineddata') prog('Downloading language model (~5 MB, one-time)…', 25+Math.round(m.progress*40));
-        else if(m.status==='initializing api')             prog('Initialising…',                     65);
-        else if(m.status==='recognizing text')             prog('Reading your menu…',                65+Math.round(m.progress*35));
+
+    function recognize(target, pctFrom, pctTo){
+      return Tesseract.recognize(target,'eng',{
+        tessedit_pageseg_mode:Tesseract.PSM.AUTO,
+        preserve_interword_spaces:'1',
+        logger:function(m){
+          if(m.status==='loading tesseract core')            prog('Loading OCR engine…', pctFrom+Math.round(m.progress*(pctTo-pctFrom)*0.3));
+          else if(m.status==='loading language traineddata') prog('Downloading language model (~5 MB, one-time)…', pctFrom+Math.round(m.progress*(pctTo-pctFrom)*0.6));
+          else if(m.status==='initializing api')             prog('Initialising…', pctFrom+Math.round((pctTo-pctFrom)*0.7));
+          else if(m.status==='recognizing text')             prog('Reading your menu…', pctFrom+Math.round(m.progress*(pctTo-pctFrom)*0.3)+Math.round((pctTo-pctFrom)*0.7));
+        }
+      });
+    }
+
+    var firstPass=await recognize(canvas, 5, 55);
+    var lines=(firstPass.data.lines||[]).filter(function(l){return l.text&&l.text.trim();});
+    if(!firstPass.data.text||firstPass.data.text.trim().length<5) throw new Error('no text');
+
+    /* Many menus are laid out in two columns. A single OCR pass over the
+       whole width often merges an item from the left column and one from
+       the right column onto the same "line" because their rows line up
+       — re-OCRing each column separately (once we can see there really
+       is a column gutter) fixes that instead of guessing at parse time. */
+    var gutter=detectColumnGutter(firstPass.data.words||[], canvas.width);
+    if(gutter){
+      prog('Two-column menu detected — reading each column…', 58);
+      var leftCanvas=cropCanvas(canvas, 0, gutter.x0);
+      var rightCanvas=cropCanvas(canvas, gutter.x1, canvas.width);
+      var leftPass=await recognize(leftCanvas, 58, 78);
+      var rightPass=await recognize(rightCanvas, 78, 98);
+      var leftLines=(leftPass.data.lines||[]).filter(function(l){return l.text&&l.text.trim();});
+      var rightLines=(rightPass.data.lines||[]).filter(function(l){return l.text&&l.text.trim();})
+        .map(function(l){
+          var b=l.bbox;
+          return {text:l.text, bbox:{x0:b.x0+gutter.x1, x1:b.x1+gutter.x1, y0:b.y0, y1:b.y1}};
+        });
+      if(leftLines.length+rightLines.length >= lines.length*0.6){
+        lines=leftLines.concat(rightLines);
       }
-    });
+    }
+
     prog('Done — reviewing results', 100);
-    var text=result.data.text;
-    if(!text||text.trim().length<5) throw new Error('no text');
-    var lines=(result.data.lines||[]).filter(function(l){return l.text&&l.text.trim();});
     if(!lines.length) throw new Error('no lines');
     showConfirmOverlay(lines, canvas.width, canvas.height);
     goStep('s-confirm');
@@ -535,6 +563,39 @@ async function readMenuLocal(){
     $('ocrProg').classList.add('hidden');
     $('ocrFill').style.width='0%';
   }
+}
+
+/* Look for a vertical gap with no text in the middle third of the
+   page — the gutter between two menu columns. Words wider than half
+   the page (section headings, full-width sentences) are ignored so
+   they don't paper over a real gutter. */
+function detectColumnGutter(words, canvasWidth){
+  var covered=new Uint8Array(canvasWidth);
+  var leftCount=0, rightCount=0;
+  var mid=canvasWidth/2;
+  words.forEach(function(w){
+    var b=w.bbox; if(!b) return;
+    if((b.x1-b.x0) > canvasWidth*0.5) return;
+    for(var x=Math.max(0,b.x0); x<Math.min(canvasWidth,b.x1); x++) covered[x]=1;
+    if((b.x0+b.x1)/2 < mid) leftCount++; else rightCount++;
+  });
+  var loBound=Math.round(canvasWidth*0.25), hiBound=Math.round(canvasWidth*0.75);
+  var bestStart=-1, bestLen=0, runStart=-1;
+  for(var x=loBound; x<=hiBound; x++){
+    if(!covered[x]){ if(runStart===-1) runStart=x; }
+    else { if(runStart!==-1){ var len=x-runStart; if(len>bestLen){ bestLen=len; bestStart=runStart; } runStart=-1; } }
+  }
+  if(runStart!==-1){ var len2=hiBound+1-runStart; if(len2>bestLen){ bestLen=len2; bestStart=runStart; } }
+  var minGutter=Math.max(20, canvasWidth*0.012);
+  if(bestStart===-1 || bestLen<minGutter || leftCount<5 || rightCount<5) return null;
+  return {x0:bestStart, x1:bestStart+bestLen};
+}
+
+function cropCanvas(srcCanvas, x0, x1){
+  var w=Math.max(1, Math.round(x1-x0)), h=srcCanvas.height;
+  var c=document.createElement('canvas'); c.width=w; c.height=h;
+  c.getContext('2d').drawImage(srcCanvas, x0, 0, w, h, 0, 0, w, h);
+  return c;
 }
 
 /* Grayscale + upscale-if-small + Otsu binarisation — the standard
@@ -671,6 +732,19 @@ function parseOcrToMenu(raw){
      (e.g. "Make it Amatriciana by adding cubed pancetta", "Add
      bacon +£1") are options on that item, not menu items of their own. */
   var ADDON_RE=/^(add\b|add[\s-]?on\b|make it\b|extra\b|with extra\b|upgrade\b|swap\b|optional\b|on request\b)/i;
+  /* Boilerplate that shows up on menus but isn't a dish: addresses,
+     social-media rows, footnotes about allergens/vegan options/service
+     charge. Drop these outright instead of turning them into items. */
+  var NOISE_RE=/^(please\b|dishes marked|can be made|vegan cheese|gluten free|extra toppings|allergen|service charge|all prices|prices (are|include)|follow us|find us|opening hours?|mon(day)?[\s-]|tue|wed|thu|fri(day)?[\s-]|sat(urday)?[\s-]|sun(day)?[\s-])/i;
+  var ADDRESS_RE=/\b([A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2})\b|\b(road|street|rd|ave|avenue|lane|ln)\b.{0,15}\d|\d{1,4}\s+\w+\s+(road|street|rd|ave|lane)/i;
+  function isNoise(l){
+    var c=l.trim();
+    if(NOISE_RE.test(c)||ADDRESS_RE.test(c)) return true;
+    /* Rows of social-media glyphs/initials like "o f @ W" */
+    var toks=c.split(/\s+/);
+    if(toks.length>=3 && toks.every(function(t){ return t.replace(/[^\w@#]/g,'').length<=2; })) return true;
+    return false;
+  }
   function xprice(l){ var m=l.match(PRICE_RE); if(!m) return null; var n=parseFloat((m[1]||m[2]).replace(',','.')); return(n>0&&n<999)?n:null; }
   function strip(l){ return l.replace(PRICE_RE,'').replace(/\s+/g,' ').replace(/^[\s\-–—·•.]+|[\s\-–—·•.]+$/g,'').trim(); }
   function isSec(l){ var c=l.replace(/[-_=*•·]/g,'').trim(); if(c.length<2||c.length>55||xprice(c)!==null) return false; if(SEC_RE.test(c)) return true; if(c===c.toUpperCase()&&/[A-Z]/.test(c)&&!/\d/.test(c)) return true; return false; }
@@ -678,6 +752,7 @@ function parseOcrToMenu(raw){
   while(i<lines.length){
     var line=lines[i];
     if(isSec(line)){ sec=line.replace(/[-_=*•·]/g,'').trim(); i++; continue; }
+    if(isNoise(line)){ i++; continue; }
     if(items.length && ADDON_RE.test(line.replace(/^[-•*]+\s*/,''))){
       var last=items[items.length-1];
       if(!last.addons) last.addons=[];
@@ -685,7 +760,7 @@ function parseOcrToMenu(raw){
       i++; continue;
     }
     var p=xprice(line);
-    if(p!==null){ var nm=strip(line); if(nm.length>1){ var desc=''; var nx=lines[i+1]||''; if(nx&&!isSec(nx)&&xprice(nx)===null&&nx.length>3&&nx.length<120&&!ADDON_RE.test(nx)){ desc=nx; i++; } items.push({name:nm,price:p,desc:desc,section:sec,addons:[]}); } i++; continue; }
+    if(p!==null){ var nm=strip(line); if(nm.length>1){ var desc=''; var nx=lines[i+1]||''; if(nx&&!isSec(nx)&&!isNoise(nx)&&xprice(nx)===null&&nx.length>3&&nx.length<120&&!ADDON_RE.test(nx)){ desc=nx; i++; } items.push({name:nm,price:p,desc:desc,section:sec,addons:[]}); } i++; continue; }
     var np=xprice(lines[i+1]||'');
     if(np!==null&&!isSec(line)&&line.length>1&&line.length<80){ items.push({name:line,price:np,desc:'',section:sec,addons:[]}); i+=2; continue; }
     /* No price on this line or the next — still a real menu entry
