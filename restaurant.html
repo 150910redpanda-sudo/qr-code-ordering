@@ -53,6 +53,17 @@ body { padding-top: var(--nav); padding-bottom: 80px; }
 .epr.price-missing { border-color: #d33; background: rgba(221,51,51,.06); }
 .epr.price-missing::placeholder { color: #d33; }
 
+/* Add-on options nested under their parent item, not as separate rows */
+.edititem { border-bottom: 1px solid var(--bd); padding: 9px 0; }
+.edititem:last-child { border-bottom: 0; }
+.edititem .editrow { padding: 0; border-bottom: 0; }
+.addon-list { margin: 6px 0 2px 22px; padding-left: 12px; border-left: 2px solid var(--bd-md); display: flex; flex-direction: column; gap: 6px; }
+.addonrow { display: flex; gap: 8px; align-items: center; }
+.addonrow input { padding: 7px 10px; font-size: 12.5px; }
+.addonrow .ean { flex: 1; }
+.addonrow .eap { width: 78px; }
+.addopt-btn { align-self: flex-start; font-size: 12px; padding: 5px 10px; opacity: .8; }
+
 /* Download QR hint */
 .qr-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 18px; }
 
@@ -561,6 +572,10 @@ function parseOcrToMenu(raw){
   var lines=text.split('\n').map(function(l){return l.trim();}).filter(function(l){return l.length>1;});
   var PRICE_RE=/(?:[£$€¥₹])\s*(\d{1,3}(?:[.,]\d{1,2})?)|(\d{1,3}(?:[.,]\d{2}))\s*(?:[£$€])/;
   var SEC_RE=/^(starters?|mains?|desserts?|drinks?|sides?|breakfast|lunch|dinner|snacks?|soups?|salads?|pizza|pasta|burgers?|specials?|cocktails?|wines?|beers?|soft\s+drinks?|hot\s+drinks?|appetiz|seafood|vegetarian|vegan|kids?|children|sharing|extras?|sauces?)/i;
+  /* Lines that describe a customisation of the dish above them
+     (e.g. "Make it Amatriciana by adding cubed pancetta", "Add
+     bacon +£1") are options on that item, not menu items of their own. */
+  var ADDON_RE=/^(add\b|add[\s-]?on\b|make it\b|extra\b|with extra\b|upgrade\b|swap\b|optional\b|on request\b)/i;
   function xprice(l){ var m=l.match(PRICE_RE); if(!m) return null; var n=parseFloat((m[1]||m[2]).replace(',','.')); return(n>0&&n<999)?n:null; }
   function strip(l){ return l.replace(PRICE_RE,'').replace(/\s+/g,' ').replace(/^[\s\-–—·•.]+|[\s\-–—·•.]+$/g,'').trim(); }
   function isSec(l){ var c=l.replace(/[-_=*•·]/g,'').trim(); if(c.length<2||c.length>55||xprice(c)!==null) return false; if(SEC_RE.test(c)) return true; if(c===c.toUpperCase()&&/[A-Z]/.test(c)&&!/\d/.test(c)) return true; return false; }
@@ -568,14 +583,20 @@ function parseOcrToMenu(raw){
   while(i<lines.length){
     var line=lines[i];
     if(isSec(line)){ sec=line.replace(/[-_=*•·]/g,'').trim(); i++; continue; }
+    if(items.length && ADDON_RE.test(line.replace(/^[-•*]+\s*/,''))){
+      var last=items[items.length-1];
+      if(!last.addons) last.addons=[];
+      last.addons.push({label:strip(line)||line, price:xprice(line)});
+      i++; continue;
+    }
     var p=xprice(line);
-    if(p!==null){ var nm=strip(line); if(nm.length>1){ var desc=''; var nx=lines[i+1]||''; if(nx&&!isSec(nx)&&xprice(nx)===null&&nx.length>3&&nx.length<120){ desc=nx; i++; } items.push({name:nm,price:p,desc:desc,section:sec}); } i++; continue; }
+    if(p!==null){ var nm=strip(line); if(nm.length>1){ var desc=''; var nx=lines[i+1]||''; if(nx&&!isSec(nx)&&xprice(nx)===null&&nx.length>3&&nx.length<120&&!ADDON_RE.test(nx)){ desc=nx; i++; } items.push({name:nm,price:p,desc:desc,section:sec,addons:[]}); } i++; continue; }
     var np=xprice(lines[i+1]||'');
-    if(np!==null&&!isSec(line)&&line.length>1&&line.length<80){ items.push({name:line,price:np,desc:'',section:sec}); i+=2; continue; }
+    if(np!==null&&!isSec(line)&&line.length>1&&line.length<80){ items.push({name:line,price:np,desc:'',section:sec,addons:[]}); i+=2; continue; }
     /* No price on this line or the next — still a real menu entry
        (e.g. "chips", "mixed salad"), so keep it with price:null
        instead of silently dropping it. */
-    if(line.length>1&&line.length<120){ items.push({name:line,price:null,desc:'',section:sec}); }
+    if(line.length>1&&line.length<120){ items.push({name:line,price:null,desc:'',section:sec,addons:[]}); }
     i++;
   }
   return items;
@@ -585,7 +606,7 @@ function parseOcrToMenu(raw){
    Step 2 → 3: Manual entry
    ============================================================ */
 function skipToManual(){
-  if(!state.menu.length) state.menu.push({name:'',price:null,desc:'',section:'Menu'});
+  if(!state.menu.length) state.menu.push({name:'',price:null,desc:'',section:'Menu',addons:[]});
   var pill=$('reviewPill'); if(pill) pill.textContent='Type in your menu below';
   renderEditor(); goStep('s-review');
 }
@@ -596,17 +617,48 @@ function skipToManual(){
 function renderEditor(){
   var box=$('editor'); box.innerHTML='';
   state.menu.forEach(function(it,i){
-    var row=document.createElement('div'); row.className='editrow';
+    if(!it.addons) it.addons=[];
+    var wrap=document.createElement('div'); wrap.className='edititem';
     var missing=it.name&&it.price==null;
+    var row=document.createElement('div'); row.className='editrow';
     row.innerHTML='<input class="enm inp" type="text" value="'+esc(it.name)+'" oninput="editName('+i+',this.value)" placeholder="Item name" aria-label="Item name"/>'
       +'<input class="epr inp'+(missing?' price-missing':'')+'" type="text" inputmode="decimal" value="'+(it.price==null?'':it.price)+'" oninput="editPrice('+i+',this.value)" placeholder="'+(missing?'Enter price *':'Price')+'" aria-label="Price"/>'
       +'<button class="iconbtn" onclick="removeItem('+i+')" aria-label="Remove">✕</button>';
-    box.appendChild(row);
+    wrap.appendChild(row);
+
+    var sub=document.createElement('div'); sub.className='addon-list';
+    it.addons.forEach(function(a,j){
+      var arow=document.createElement('div'); arow.className='addonrow';
+      arow.innerHTML='<input class="ean inp" type="text" value="'+esc(a.label)+'" oninput="editAddonLabel('+i+','+j+',this.value)" placeholder="Option (e.g. add cubed pancetta)" aria-label="Option"/>'
+        +'<input class="eap inp" type="text" inputmode="decimal" value="'+(a.price==null?'':a.price)+'" oninput="editAddonPrice('+i+','+j+',this.value)" placeholder="+ Price" aria-label="Option price"/>'
+        +'<button class="iconbtn" onclick="removeAddon('+i+','+j+')" aria-label="Remove option">✕</button>';
+      sub.appendChild(arow);
+    });
+    var addBtn=document.createElement('button');
+    addBtn.type='button'; addBtn.className='btn btn-g btn-sm addopt-btn';
+    addBtn.textContent='＋ Add option';
+    addBtn.onclick=function(){ addAddon(i); };
+    sub.appendChild(addBtn);
+    wrap.appendChild(sub);
+
+    box.appendChild(wrap);
   });
   $('reviewErr').textContent='';
 }
 function editName(i,v){ state.menu[i].name=v; refreshPriceFlag(i); }
 function editPrice(i,v){ var n=parseFloat(v); state.menu[i].price=isNaN(n)?null:n; refreshPriceFlag(i); }
+function editAddonLabel(i,j,v){ state.menu[i].addons[j].label=v; }
+function editAddonPrice(i,j,v){ var n=parseFloat(v); state.menu[i].addons[j].price=isNaN(n)?null:n; }
+function removeAddon(i,j){ state.menu[i].addons.splice(j,1); renderEditor(); }
+function addAddon(i){
+  if(!state.menu[i].addons) state.menu[i].addons=[];
+  state.menu[i].addons.push({label:'',price:null});
+  renderEditor();
+  var wrap=$('editor').children[i];
+  var inputs=wrap.querySelectorAll('.ean');
+  var lastInput=inputs[inputs.length-1];
+  if(lastInput) lastInput.focus();
+}
 function refreshPriceFlag(i){
   var row=$('editor').children[i]; if(!row) return;
   var it=state.menu[i], pr=row.querySelector('.epr');
@@ -616,9 +668,10 @@ function refreshPriceFlag(i){
 }
 function removeItem(i){ state.menu.splice(i,1); renderEditor(); }
 function addItem(){
-  state.menu.push({name:'',price:null,desc:'',section:'Menu'});
+  state.menu.push({name:'',price:null,desc:'',section:'Menu',addons:[]});
   renderEditor();
-  var last=$('editor').querySelector('.editrow:last-child .enm');
+  var wrap=$('editor').lastElementChild;
+  var last=wrap?wrap.querySelector('.enm'):null;
   if(last) last.focus();
 }
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
@@ -630,7 +683,13 @@ function buildPayload(){
   return {
     r:state.restaurant||'Our Menu', p:state.phone, c:state.currency,
     m:state.menu.filter(function(it){return it.name;}).map(function(it){
-      return {n:it.name, pr:(it.price==null?null:it.price), d:it.desc||'', s:it.section||'Menu'};
+      var desc=it.desc||'';
+      var addons=(it.addons||[]).filter(function(a){return a.label;});
+      if(addons.length){
+        var extra=addons.map(function(a){ return '+ '+a.label+(a.price!=null?' ('+money(a.price)+')':''); }).join('  ·  ');
+        desc = desc ? (desc+'  ·  '+extra) : extra;
+      }
+      return {n:it.name, pr:(it.price==null?null:it.price), d:desc, s:it.section||'Menu'};
     })
   };
 }
