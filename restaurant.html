@@ -37,6 +37,18 @@ body { padding-top: var(--nav); padding-bottom: 80px; }
 .method-text strong { display: block; font-size: 14.5px; font-weight: 600; color: var(--ink); }
 .method-text span   { display: block; font-size: 12.5px; color: var(--muted); margin-top: 2px; }
 
+/* Confirm-scan overlay (Lens-style highlighted text on the photo) */
+.confirm-wrap { position: relative; display: inline-block; max-width: 100%; line-height: 0; }
+.confirm-wrap img { max-width: 100%; display: block; border-radius: var(--r); }
+.ocr-box {
+  position: absolute; box-sizing: border-box;
+  background: rgba(42,107,71,.16); border: 1.5px solid rgba(42,107,71,.55);
+  border-radius: 3px; color: #16331f; font-family: inherit; font-weight: 600;
+  overflow: visible; white-space: pre; cursor: text;
+  display: flex; align-items: center; padding: 0 2px;
+}
+.ocr-box:focus { background: #fff; border-color: var(--green); outline: none; box-shadow: 0 0 0 3px var(--green-lt); z-index: 2; }
+
 /* Download QR hint */
 .qr-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 18px; }
 
@@ -141,6 +153,23 @@ body { padding-top: var(--nav); padding-bottom: 80px; }
     </div>
     <p id="readStat" class="stat"></p>
     <button class="btn btn-g btn-w mt" onclick="goStep('s-details')">← Back</button>
+  </div>
+
+  <!-- ── STEP 2b: Confirm scan (Lens-style overlay) ── -->
+  <div id="s-confirm" class="step-panel hidden">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <h2 style="font-size:18px">Check what we read</h2>
+        <span class="pill">Tap text to fix it</span>
+      </div>
+      <p class="note">We've highlighted every line we recognised, right on top of your photo. Tap any piece of text to correct it before continuing.</p>
+      <div id="confirmWrap" class="confirm-wrap mt">
+        <img id="confirmImg" alt="Scanned menu"/>
+      </div>
+      <p id="confirmStat" class="stat"></p>
+    </div>
+    <button class="btn btn-p btn-w mt" onclick="confirmScan()">✓ Looks correct — continue</button>
+    <button class="btn btn-g btn-w mt" onclick="goStep('s-upload')">← Retake or choose another photo</button>
   </div>
 
   <!-- ── STEP 3: Review ── -->
@@ -258,8 +287,8 @@ function money(n){ return state.currency + (Number(n)||0).toFixed(2); }
 /* ============================================================
    Wizard navigation
    ============================================================ */
-var STEPS = ['s-details','s-upload','s-review','s-qr'];
-var STEP_N = { 's-details':1, 's-upload':2, 's-review':3, 's-qr':4 };
+var STEPS = ['s-details','s-upload','s-confirm','s-review','s-qr'];
+var STEP_N = { 's-details':1, 's-upload':2, 's-confirm':2, 's-review':3, 's-qr':4 };
 
 function goStep(id) {
   STEPS.forEach(function(s){ var el=$(s); if(el) el.classList.toggle('hidden', s!==id); });
@@ -383,11 +412,10 @@ async function readMenuLocal(){
     prog('Done — reviewing results', 100);
     var text=result.data.text;
     if(!text||text.trim().length<5) throw new Error('no text');
-    var items=parseOcrToMenu(text);
-    if(!items.length) throw new Error('no items');
-    state.menu=(state.menu||[]).concat(items);
-    var pill=$('reviewPill'); if(pill) pill.textContent='OCR read it — check it over';
-    renderEditor(); goStep('s-review');
+    var lines=(result.data.lines||[]).filter(function(l){return l.text&&l.text.trim();});
+    if(!lines.length) throw new Error('no lines');
+    showConfirmOverlay(lines, canvas.width, canvas.height);
+    goStep('s-confirm');
   }catch(err){
     $('readStat').innerHTML='<span class="err">Couldn\'t extract items from that photo. Try a flatter, well-lit shot — or use manual entry.</span>';
   }finally{
@@ -452,6 +480,74 @@ function preprocessForOcr(b64, type){
     img.onerror=function(){ reject(new Error('image load failed')); };
     img.src='data:'+type+';base64,'+b64;
   });
+}
+
+/* ============================================================
+   Step 2 → 2b: Confirm-scan overlay (Lens/Translate-style)
+   Shows the photo with every recognised line highlighted in place,
+   editable inline, before it's parsed into structured menu items.
+   ============================================================ */
+var _ocrLines=null, _ocrW=0, _ocrH=0;
+
+function showConfirmOverlay(lines, canvasW, canvasH){
+  _ocrLines = lines.map(function(l){ return {text:l.text.replace(/\n+$/,''), bbox:l.bbox, el:null}; });
+  _ocrW=canvasW; _ocrH=canvasH;
+  $('confirmStat').textContent='';
+
+  var img=$('confirmImg');
+  img.onload=function(){ layoutConfirmOverlay(); };
+  img.src='data:'+state.imgType+';base64,'+state.imgB64;
+
+  var wrap=$('confirmWrap');
+  Array.prototype.slice.call(wrap.querySelectorAll('.ocr-box')).forEach(function(b){ b.remove(); });
+  _ocrLines.forEach(function(line){
+    var box=document.createElement('div');
+    box.className='ocr-box';
+    box.contentEditable='true';
+    box.spellcheck=false;
+    box.textContent=line.text;
+    wrap.appendChild(box);
+    line.el=box;
+  });
+  /* image may already be loaded (cached data URL) — onload won't refire */
+  if(img.complete && img.naturalWidth) layoutConfirmOverlay();
+}
+
+function layoutConfirmOverlay(){
+  if(!_ocrLines) return;
+  var img=$('confirmImg');
+  var scaleX=img.clientWidth/_ocrW, scaleY=img.clientHeight/_ocrH;
+  if(!scaleX||!scaleY) return;
+  _ocrLines.forEach(function(line){
+    if(!line.el) return;
+    var b=line.bbox;
+    var left=b.x0*scaleX, top=b.y0*scaleY;
+    var w=(b.x1-b.x0)*scaleX, h=(b.y1-b.y0)*scaleY;
+    line.el.style.left=left+'px';
+    line.el.style.top=top+'px';
+    line.el.style.width=Math.max(w,14)+'px';
+    line.el.style.height=Math.max(h,14)+'px';
+    line.el.style.fontSize=Math.max(10, h*0.68)+'px';
+  });
+}
+
+window.addEventListener('resize', function(){
+  var panel=$('s-confirm');
+  if(panel && !panel.classList.contains('hidden')) layoutConfirmOverlay();
+});
+
+function confirmScan(){
+  if(!_ocrLines || !_ocrLines.length){ goStep('s-upload'); return; }
+  var rawText=_ocrLines.map(function(l){ return (l.el?l.el.textContent:l.text).trim(); })
+                        .filter(Boolean).join('\n');
+  var items=parseOcrToMenu(rawText);
+  if(!items.length){
+    $('confirmStat').innerHTML='<span class="err">Couldn\'t turn that into menu items — try editing the highlighted text so each line reads "Item name      Price", or go back and retake the photo.</span>';
+    return;
+  }
+  state.menu=(state.menu||[]).concat(items);
+  var pill=$('reviewPill'); if(pill) pill.textContent='OCR read it — check it over';
+  renderEditor(); goStep('s-review');
 }
 
 function parseOcrToMenu(raw){
