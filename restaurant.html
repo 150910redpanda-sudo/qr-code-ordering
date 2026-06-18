@@ -49,6 +49,10 @@ body { padding-top: var(--nav); padding-bottom: 80px; }
 }
 .ocr-box:focus { background: #fff; border-color: var(--green); outline: none; box-shadow: 0 0 0 3px var(--green-lt); z-index: 2; }
 
+/* Items missing a price must be filled in before a QR can be generated */
+.epr.price-missing { border-color: #d33; background: rgba(221,51,51,.06); }
+.epr.price-missing::placeholder { color: #d33; }
+
 /* Download QR hint */
 .qr-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 18px; }
 
@@ -182,6 +186,7 @@ body { padding-top: var(--nav); padding-bottom: 80px; }
       <p class="note">Tap any field to edit it. Hit ✕ to remove something. Add anything that got missed.</p>
       <div id="editor" style="margin-top:12px"></div>
       <button class="btn btn-g btn-sm mt" onclick="addItem()">＋ Add an item</button>
+      <p id="reviewErr" class="stat"></p>
     </div>
     <button class="btn btn-p btn-w mt" id="makeQrBtn" onclick="makeQR()">Generate QR code →</button>
     <button class="btn btn-g btn-w mt" onclick="goStep('s-upload')">← Back to menu</button>
@@ -592,14 +597,23 @@ function renderEditor(){
   var box=$('editor'); box.innerHTML='';
   state.menu.forEach(function(it,i){
     var row=document.createElement('div'); row.className='editrow';
+    var missing=it.name&&it.price==null;
     row.innerHTML='<input class="enm inp" type="text" value="'+esc(it.name)+'" oninput="editName('+i+',this.value)" placeholder="Item name" aria-label="Item name"/>'
-      +'<input class="epr inp" type="text" inputmode="decimal" value="'+(it.price==null?'':it.price)+'" oninput="editPrice('+i+',this.value)" placeholder="Price" aria-label="Price"/>'
+      +'<input class="epr inp'+(missing?' price-missing':'')+'" type="text" inputmode="decimal" value="'+(it.price==null?'':it.price)+'" oninput="editPrice('+i+',this.value)" placeholder="'+(missing?'Enter price *':'Price')+'" aria-label="Price"/>'
       +'<button class="iconbtn" onclick="removeItem('+i+')" aria-label="Remove">✕</button>';
     box.appendChild(row);
   });
+  $('reviewErr').textContent='';
 }
-function editName(i,v){ state.menu[i].name=v; }
-function editPrice(i,v){ var n=parseFloat(v); state.menu[i].price=isNaN(n)?null:n; }
+function editName(i,v){ state.menu[i].name=v; refreshPriceFlag(i); }
+function editPrice(i,v){ var n=parseFloat(v); state.menu[i].price=isNaN(n)?null:n; refreshPriceFlag(i); }
+function refreshPriceFlag(i){
+  var row=$('editor').children[i]; if(!row) return;
+  var it=state.menu[i], pr=row.querySelector('.epr');
+  var missing=it.name&&it.price==null;
+  pr.classList.toggle('price-missing', !!missing);
+  pr.placeholder = missing ? 'Enter price *' : 'Price';
+}
 function removeItem(i){ state.menu.splice(i,1); renderEditor(); }
 function addItem(){
   state.menu.push({name:'',price:null,desc:'',section:'Menu'});
@@ -629,6 +643,18 @@ var SITE = 'https://qr-code-ordering-r2x7.vercel.app';
 async function makeQR(){
   var clean=state.menu.filter(function(it){return it.name;});
   if(!clean.length){ alert('Add at least one menu item before generating a QR code.'); return; }
+
+  var missingIdx=-1;
+  for(var i=0;i<state.menu.length;i++){
+    if(state.menu[i].name && state.menu[i].price==null){ missingIdx=i; break; }
+  }
+  if(missingIdx!==-1){
+    $('reviewErr').innerHTML='<span class="err">Every item needs a price before you can generate a QR code — fill in the highlighted field'+(state.menu.filter(function(it){return it.name&&it.price==null;}).length>1?'s':'')+' below.</span>';
+    var row=$('editor').children[missingIdx];
+    if(row){ row.scrollIntoView({behavior:'smooth',block:'center'}); var f=row.querySelector('.epr'); if(f) f.focus(); }
+    return;
+  }
+  $('reviewErr').textContent='';
 
   var btn=$('makeQrBtn');
   if(btn){ btn.disabled=true; btn.textContent='Saving your menu…'; }
