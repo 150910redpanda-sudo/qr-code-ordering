@@ -199,6 +199,18 @@ body { padding-top: var(--nav); padding-bottom: 80px; }
       <button class="btn btn-g btn-sm mt" onclick="addItem()">＋ Add an item</button>
       <p id="reviewErr" class="stat"></p>
     </div>
+
+    <div class="card mt">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:16px">
+        <div>
+          <label class="fld">Brand colour</label>
+          <p id="themeNote" class="note" style="margin-top:2px">Picked up from your menu photo — this colours your customers' ordering page.</p>
+        </div>
+        <input type="color" id="themeColor" value="#2A6B47" oninput="setThemeColor(this.value)" aria-label="Brand colour"
+          style="width:48px;height:48px;border:none;border-radius:10px;cursor:pointer;padding:0;background:none;flex-shrink:0"/>
+      </div>
+    </div>
+
     <button class="btn btn-p btn-w mt" id="makeQrBtn" onclick="makeQR()">Generate QR code →</button>
     <button class="btn btn-g btn-w mt" onclick="goStep('s-upload')">← Back to menu</button>
   </div>
@@ -295,7 +307,8 @@ body { padding-top: var(--nav); padding-bottom: 80px; }
 var state = {
   restaurant:'', phone:'', currency:'£',
   imgB64:null, imgType:'image/jpeg',
-  menu:[], cart:{}, lastOrderText:''
+  menu:[], cart:{}, lastOrderText:'',
+  theme:{accent:null, auto:true}
 };
 var $ = function(id){ return document.getElementById(id); };
 function money(n){ return state.currency + (Number(n)||0).toFixed(2); }
@@ -376,6 +389,7 @@ function onFile(e){
         state.imgType=f.type;
         $('prev').innerHTML='<img src="'+reader.result+'" alt="Menu preview"/>';
         $('prev').classList.remove('hidden');
+        extractBrandColor(img);
         syncUpload(); return;
       }
 
@@ -390,11 +404,92 @@ function onFile(e){
       state.imgB64=url.split(',')[1]; state.imgType='image/jpeg';
       $('prev').innerHTML='<img src="'+url+'" alt="Menu preview"/>';
       $('prev').classList.remove('hidden');
+      extractBrandColor(img);
       syncUpload();
     };
     img.src=reader.result;
   };
   reader.readAsDataURL(f);
+}
+
+/* ============================================================
+   Brand colour — pick a usable accent out of the menu photo so the
+   customer ordering page can be tailored to this restaurant's look,
+   instead of every restaurant getting the same default green.
+   ============================================================ */
+function extractBrandColor(imgEl){
+  state.theme.auto=true;
+  try{
+    var sw=64, sh=64;
+    var c=document.createElement('canvas'); c.width=sw; c.height=sh;
+    var ctx=c.getContext('2d');
+    ctx.drawImage(imgEl,0,0,sw,sh);
+    var data=ctx.getImageData(0,0,sw,sh).data;
+    var buckets={};
+    for(var i=0;i<data.length;i+=4){
+      if(data[i+3]<200) continue;
+      var hsl=rgbToHsl(data[i],data[i+1],data[i+2]);
+      var h=hsl[0], s=hsl[1], l=hsl[2];
+      /* Skip near-white/near-black/grey pixels — that's paper and
+         printed text, not the restaurant's brand colour. */
+      if(s<0.18||l<0.12||l>0.88) continue;
+      var key=Math.floor(h/15)*15;
+      if(!buckets[key]) buckets[key]={count:0,sSum:0,lSum:0,hSum:0};
+      buckets[key].count++; buckets[key].sSum+=s; buckets[key].lSum+=l; buckets[key].hSum+=h;
+    }
+    var best=null,bestScore=0;
+    Object.keys(buckets).forEach(function(k){
+      var bk=buckets[k], score=bk.count*(bk.sSum/bk.count);
+      if(score>bestScore){ bestScore=score; best=bk; }
+    });
+    if(!best||best.count<8){ state.theme.accent=null; updateThemeUI(); return; }
+    var avgH=best.hSum/best.count, avgS=Math.max(best.sSum/best.count,0.45);
+    /* Clamp lightness so the colour stays dark enough for white button
+       text to stay readable on top of it. */
+    var avgL=Math.min(Math.max(best.lSum/best.count,0.28),0.48);
+    var rgb=hslToRgb(avgH/360,avgS,avgL);
+    state.theme.accent=rgbToHex(rgb[0],rgb[1],rgb[2]);
+  }catch(err){ state.theme.accent=null; }
+  updateThemeUI();
+}
+
+function updateThemeUI(){
+  var sw=$('themeColor'), note=$('themeNote');
+  if(!sw) return;
+  var hex=state.theme.accent||'#2A6B47';
+  sw.value=hex;
+  if(note) note.textContent = state.theme.accent
+    ? 'Picked up from your menu photo — this colours your customers\' ordering page. Tap the swatch to change it.'
+    : 'We couldn\'t pick out a strong brand colour from your photo, so we\'re using our default green. Tap the swatch to set your own.';
+}
+
+function setThemeColor(v){
+  state.theme.accent=v; state.theme.auto=false;
+  var note=$('themeNote'); if(note) note.textContent='Your chosen brand colour — this colours your customers\' ordering page.';
+}
+
+function rgbToHsl(r,g,b){
+  r/=255; g/=255; b/=255;
+  var max=Math.max(r,g,b), min=Math.min(r,g,b), l=(max+min)/2, d=max-min, h=0, s=0;
+  if(d!==0){
+    s = l>0.5 ? d/(2-max-min) : d/(max+min);
+    if(max===r) h=((g-b)/d+(g<b?6:0));
+    else if(max===g) h=(b-r)/d+2;
+    else h=(r-g)/d+4;
+    h*=60;
+  }
+  return [h,s,l];
+}
+function hslToRgb(h,s,l){
+  function f(n){
+    var k=(n+h*12)%12;
+    var a=s*Math.min(l,1-l);
+    return l-a*Math.max(-1,Math.min(k-3,Math.min(9-k,1)));
+  }
+  return [Math.round(f(0)*255),Math.round(f(8)*255),Math.round(f(4)*255)];
+}
+function rgbToHex(r,g,b){
+  return '#'+[r,g,b].map(function(v){ return Math.max(0,Math.min(255,v)).toString(16).padStart(2,'0'); }).join('');
 }
 
 /* ============================================================
@@ -615,6 +710,7 @@ function skipToManual(){
    Step 3: Menu editor
    ============================================================ */
 function renderEditor(){
+  updateThemeUI();
   var box=$('editor'); box.innerHTML='';
   state.menu.forEach(function(it,i){
     if(!it.addons) it.addons=[];
@@ -682,6 +778,7 @@ function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').r
 function buildPayload(){
   return {
     r:state.restaurant||'Our Menu', p:state.phone, c:state.currency,
+    th:state.theme.accent||'',
     m:state.menu.filter(function(it){return it.name;}).map(function(it){
       var desc=it.desc||'';
       var addons=(it.addons||[]).filter(function(a){return a.label;});
