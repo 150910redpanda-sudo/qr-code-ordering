@@ -565,29 +565,51 @@ async function readMenuLocal(){
   }
 }
 
-/* Look for a vertical gap with no text in the middle third of the
-   page — the gutter between two menu columns. Words wider than half
-   the page (section headings, full-width sentences) are ignored so
-   they don't paper over a real gutter. */
+/* Look for a vertical band with very little text in the middle of the
+   page — the gutter between two menu columns. Real menus almost always
+   have a handful of full-width lines (a banner sentence, a footnote,
+   a centred boxed section) that cross right through where the gutter
+   would be — a single line like that shouldn't be enough to block
+   detection, so this counts *density* across the whole page height
+   and looks for a valley, rather than requiring an absolute zero gap. */
 function detectColumnGutter(words, canvasWidth){
-  var covered=new Uint8Array(canvasWidth);
+  var density=new Int32Array(canvasWidth);
   var leftCount=0, rightCount=0;
-  var mid=canvasWidth/2;
+  words.forEach(function(w){
+    var b=w.bbox; if(!b) return;
+    if((b.x1-b.x0) > canvasWidth*0.5) return; // ignore full-width lines/headings
+    for(var x=Math.max(0,b.x0); x<Math.min(canvasWidth,b.x1); x++) density[x]++;
+  });
+  var loBound=Math.round(canvasWidth*0.2), hiBound=Math.round(canvasWidth*0.8);
+  if(hiBound<=loBound) return null;
+
+  /* Reference density = typical column-text density, taken from the
+     busiest parts of the central band. The gutter must be dramatically
+     emptier than that, not just "less busy". */
+  var sorted=[];
+  for(var x=loBound; x<=hiBound; x++) sorted.push(density[x]);
+  sorted.sort(function(a,b){return a-b;});
+  var ref=sorted[Math.floor(sorted.length*0.85)];
+  if(ref<=0) return null;
+  var threshold=Math.max(1, ref*0.22);
+
+  var bestStart=-1, bestLen=0, runStart=-1;
+  for(var x2=loBound; x2<=hiBound; x2++){
+    if(density[x2]<=threshold){ if(runStart===-1) runStart=x2; }
+    else { if(runStart!==-1){ var len=x2-runStart; if(len>bestLen){ bestLen=len; bestStart=runStart; } runStart=-1; } }
+  }
+  if(runStart!==-1){ var len2=hiBound+1-runStart; if(len2>bestLen){ bestLen=len2; bestStart=runStart; } }
+
+  var minGutter=Math.max(20, canvasWidth*0.012);
+  if(bestStart===-1 || bestLen<minGutter) return null;
+
+  var gMid=bestStart+bestLen/2;
   words.forEach(function(w){
     var b=w.bbox; if(!b) return;
     if((b.x1-b.x0) > canvasWidth*0.5) return;
-    for(var x=Math.max(0,b.x0); x<Math.min(canvasWidth,b.x1); x++) covered[x]=1;
-    if((b.x0+b.x1)/2 < mid) leftCount++; else rightCount++;
+    if((b.x0+b.x1)/2 < gMid) leftCount++; else rightCount++;
   });
-  var loBound=Math.round(canvasWidth*0.25), hiBound=Math.round(canvasWidth*0.75);
-  var bestStart=-1, bestLen=0, runStart=-1;
-  for(var x=loBound; x<=hiBound; x++){
-    if(!covered[x]){ if(runStart===-1) runStart=x; }
-    else { if(runStart!==-1){ var len=x-runStart; if(len>bestLen){ bestLen=len; bestStart=runStart; } runStart=-1; } }
-  }
-  if(runStart!==-1){ var len2=hiBound+1-runStart; if(len2>bestLen){ bestLen=len2; bestStart=runStart; } }
-  var minGutter=Math.max(20, canvasWidth*0.012);
-  if(bestStart===-1 || bestLen<minGutter || leftCount<5 || rightCount<5) return null;
+  if(leftCount<5 || rightCount<5) return null;
   return {x0:bestStart, x1:bestStart+bestLen};
 }
 
@@ -731,7 +753,7 @@ function parseOcrToMenu(raw){
   /* Lines that describe a customisation of the dish above them
      (e.g. "Make it Amatriciana by adding cubed pancetta", "Add
      bacon +£1") are options on that item, not menu items of their own. */
-  var ADDON_RE=/^(add\b|add[\s-]?on\b|make it\b|extra\b|with extra\b|upgrade\b|swap\b|optional\b|on request\b)/i;
+  var ADDON_RE=/^(add\b|add[\s-]?on\b|make it\b|extra\b|with\b|upgrade\b|swap\b|optional\b|on request\b|\+\s*\w)/i;
   /* Boilerplate that shows up on menus but isn't a dish: addresses,
      social-media rows, footnotes about allergens/vegan options/service
      charge. Drop these outright instead of turning them into items. */
@@ -747,7 +769,24 @@ function parseOcrToMenu(raw){
   }
   function xprice(l){ var m=l.match(PRICE_RE); if(!m) return null; var n=parseFloat((m[1]||m[2]).replace(',','.')); return(n>0&&n<999)?n:null; }
   function strip(l){ return l.replace(PRICE_RE,'').replace(/\s+/g,' ').replace(/^[\s\-–—·•.]+|[\s\-–—·•.]+$/g,'').trim(); }
-  function isSec(l){ var c=l.replace(/[-_=*•·]/g,'').trim(); if(c.length<2||c.length>55||xprice(c)!==null) return false; if(SEC_RE.test(c)) return true; if(c===c.toUpperCase()&&/[A-Z]/.test(c)&&!/\d/.test(c)) return true; return false; }
+  /* Small allergen/vegan icons printed next to a dish name OCR as
+     garbage glyph clusters ("Q@", "OO", "¢", "0®") stuck on the end
+     of the name — strip those without touching real words. */
+  function cleanName(s){
+    s=s.replace(/\s+[A-Z0-9@°¢®©()]{1,4}$/,'');
+    s=s.replace(/[@°¢®©][\w()@°¢®©]{0,3}$/,'');
+    return s.trim();
+  }
+  function isSec(l){
+    var c=l.replace(/[-_=*•·]/g,'').trim();
+    if(c.length<2||c.length>55||xprice(c)!==null) return false;
+    if(SEC_RE.test(c)) return true;
+    /* A short ALL-CAPS line ("ANTIPASTI", "LE ARANCINE") is a heading.
+       A long one ("FRESH SOUP OF THE DAY WITH TOASTED BREAD") is just
+       this menu's style for dish descriptions — don't swallow those. */
+    if(c===c.toUpperCase()&&/[A-Z]/.test(c)&&!/\d/.test(c)&&c.length<=24&&c.split(/\s+/).length<=4) return true;
+    return false;
+  }
   var items=[],sec='Menu',i=0;
   while(i<lines.length){
     var line=lines[i];
@@ -756,17 +795,22 @@ function parseOcrToMenu(raw){
     if(items.length && ADDON_RE.test(line.replace(/^[-•*]+\s*/,''))){
       var last=items[items.length-1];
       if(!last.addons) last.addons=[];
-      last.addons.push({label:strip(line)||line, price:xprice(line)});
+      last.addons.push({label:cleanName(strip(line))||line, price:xprice(line)});
       i++; continue;
     }
     var p=xprice(line);
-    if(p!==null){ var nm=strip(line); if(nm.length>1){ var desc=''; var nx=lines[i+1]||''; if(nx&&!isSec(nx)&&!isNoise(nx)&&xprice(nx)===null&&nx.length>3&&nx.length<120&&!ADDON_RE.test(nx)){ desc=nx; i++; } items.push({name:nm,price:p,desc:desc,section:sec,addons:[]}); } i++; continue; }
+    if(p!==null){ var nm=cleanName(strip(line)); if(nm.length>1){ var desc=''; var nx=lines[i+1]||''; if(nx&&!isSec(nx)&&!isNoise(nx)&&xprice(nx)===null&&nx.length>3&&nx.length<120&&!ADDON_RE.test(nx)){ desc=nx; i++; } items.push({name:nm,price:p,desc:desc,section:sec,addons:[]}); } i++; continue; }
     var np=xprice(lines[i+1]||'');
-    if(np!==null&&!isSec(line)&&line.length>1&&line.length<80){ items.push({name:line,price:np,desc:'',section:sec,addons:[]}); i+=2; continue; }
+    if(np!==null&&!isSec(line)&&line.length>1&&line.length<80){ items.push({name:cleanName(line),price:np,desc:'',section:sec,addons:[]}); i+=2; continue; }
     /* No price on this line or the next — still a real menu entry
        (e.g. "chips", "mixed salad"), so keep it with price:null
-       instead of silently dropping it. */
-    if(line.length>1&&line.length<120){ items.push({name:line,price:null,desc:'',section:sec,addons:[]}); }
+       instead of silently dropping it. We deliberately don't try to
+       pull the *next* line in as a description here: in this same
+       "no price" shape, two consecutive lines are usually two
+       independent items (e.g. "chips" / "onion rings"), not a dish
+       and its description — guessing wrong would silently merge two
+       real menu items into one. */
+    if(line.length>1&&line.length<120){ items.push({name:cleanName(line),price:null,desc:'',section:sec,addons:[]}); }
     i++;
   }
   return items;
