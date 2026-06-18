@@ -567,6 +567,10 @@ function parseOcrToMenu(raw){
     if(p!==null){ var nm=strip(line); if(nm.length>1){ var desc=''; var nx=lines[i+1]||''; if(nx&&!isSec(nx)&&xprice(nx)===null&&nx.length>3&&nx.length<120){ desc=nx; i++; } items.push({name:nm,price:p,desc:desc,section:sec}); } i++; continue; }
     var np=xprice(lines[i+1]||'');
     if(np!==null&&!isSec(line)&&line.length>1&&line.length<80){ items.push({name:line,price:np,desc:'',section:sec}); i+=2; continue; }
+    /* No price on this line or the next — still a real menu entry
+       (e.g. "chips", "mixed salad"), so keep it with price:null
+       instead of silently dropping it. */
+    if(line.length>1&&line.length<120){ items.push({name:line,price:null,desc:'',section:sec}); }
     i++;
   }
   return items;
