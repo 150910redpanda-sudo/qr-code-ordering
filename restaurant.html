@@ -124,13 +124,9 @@ body { padding-top: var(--nav); padding-bottom: 80px; }
     <div class="card mt">
       <label class="fld">How would you like to read the menu?</label>
       <div class="method-group">
-        <button id="readBtn" class="method-btn primary-method" disabled onclick="readMenu()">
-          <span class="method-icon">✨</span>
-          <div class="method-text"><strong>Read with AI (recommended)</strong><span>Uses Claude AI — fastest, most accurate. Requires internet.</span></div>
-        </button>
-        <button id="localBtn" class="method-btn" disabled onclick="readMenuLocal()">
+        <button id="localBtn" class="method-btn primary-method" disabled onclick="readMenuLocal()">
           <span class="method-icon">📍</span>
-          <div class="method-text"><strong>Read on this device</strong><span>Uses Tesseract OCR — works offline. Downloads ~5 MB once.</span></div>
+          <div class="method-text"><strong>Read menu (OCR)</strong><span>Uses Tesseract OCR — works offline, on this device. Downloads ~5 MB once.</span></div>
         </button>
         <button id="manualBtn" class="method-btn" disabled onclick="skipToManual()">
           <span class="method-icon">✏️</span>
@@ -301,7 +297,6 @@ function nextToUpload(){
    ============================================================ */
 function syncUpload(){
   var has = !!state.imgB64;
-  $('readBtn').disabled  = !has;
   $('localBtn').disabled = !has;
   $('manualBtn').disabled = false; // manual never needs a photo
 }
@@ -358,62 +353,11 @@ function onFile(e){
 }
 
 /* ============================================================
-   Step 2 → 3: AI read (Claude via /api/read-menu)
-   ============================================================ */
-async function readMenu(){
-  var btn=$('readBtn');
-  btn.disabled=true;
-  btn.querySelector('strong').textContent='Reading your menu…';
-  $('readStat').textContent='This usually takes a few seconds.';
-
-  var prompt="You are a menu digitiser. Read this photo of a restaurant menu and extract every food and drink item. "
-    +"Respond with ONLY valid JSON and nothing else — no markdown, no commentary. Use exactly this schema:\n"
-    +'{"items":[{"name":"string","price":number_or_null,"desc":"string","section":"string"}]}\n'
-    +"Rules: price is a plain number with no currency symbol; null if not shown. "
-    +"desc is a short description (max ~8 words) or empty string. "
-    +"section is the heading the item sits under (e.g. Starters, Mains, Drinks); if none use \"Menu\". "
-    +"Keep names exactly as written. Do not invent items.";
-
-  try{
-    var res=await fetch('/api/read-menu',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({image:state.imgB64, imageType:state.imgType, prompt:prompt})
-    });
-    var data=await res.json();
-    if(!res.ok) throw new Error(data.error||'API error');
-    var text=(data.content||[]).filter(function(b){return b.type==='text';}).map(function(b){return b.text;}).join('');
-    var json=extractJSON(text);
-    var parsed=JSON.parse(json);
-    var items=(parsed.items||[]).filter(function(it){return it&&it.name;});
-    if(!items.length) throw new Error('no items');
-    state.menu=items.map(function(it){
-      return {name:String(it.name).trim(), price:(it.price==null?null:Number(it.price)), desc:(it.desc?String(it.desc).trim():''), section:(it.section?String(it.section).trim():'Menu')};
-    });
-    var pill=$('reviewPill'); if(pill) pill.textContent='Looks good — fix anything that\'s off';
-    renderEditor(); goStep('s-review');
-  }catch(err){
-    $('readStat').innerHTML='<span class="err">Couldn\'t read that one. Try a clearer, well-lit photo — or use Local OCR or manual entry.</span>';
-  }finally{
-    btn.querySelector('strong').textContent='Read with AI (recommended)';
-    syncUpload();
-  }
-}
-
-function extractJSON(t){
-  if(!t) throw new Error('empty');
-  t=t.replace(/```json/gi,'').replace(/```/g,'').trim();
-  var a=t.indexOf('{'), b=t.lastIndexOf('}');
-  if(a===-1||b===-1) throw new Error('no json');
-  return t.slice(a,b+1);
-}
-
-/* ============================================================
    Step 2 → 3: Local Tesseract OCR
    ============================================================ */
 async function readMenuLocal(){
   var btn=$('localBtn');
-  btn.disabled=true; $('readBtn').disabled=true;
+  btn.disabled=true;
   btn.querySelector('strong').textContent='Starting OCR engine…';
   $('ocrProg').classList.remove('hidden');
   $('readStat').textContent='';
@@ -424,13 +368,16 @@ async function readMenuLocal(){
   }
 
   try{
-    var url='data:'+state.imgType+';base64,'+state.imgB64;
-    var result=await Tesseract.recognize(url,'eng',{
+    prog('Preparing image for OCR…', 5);
+    var canvas=await preprocessForOcr(state.imgB64, state.imgType);
+    var result=await Tesseract.recognize(canvas,'eng',{
+      tessedit_pageseg_mode:Tesseract.PSM.AUTO,
+      preserve_interword_spaces:'1',
       logger:function(m){
-        if(m.status==='loading tesseract core')            prog('Loading OCR engine…',               Math.round(m.progress*25));
-        else if(m.status==='loading language traineddata') prog('Downloading language model (~5 MB, one-time)…', 25+Math.round(m.progress*45));
-        else if(m.status==='initializing api')             prog('Initialising…',                     70);
-        else if(m.status==='recognizing text')             prog('Reading your menu…',                70+Math.round(m.progress*30));
+        if(m.status==='loading tesseract core')            prog('Loading OCR engine…',               5+Math.round(m.progress*20));
+        else if(m.status==='loading language traineddata') prog('Downloading language model (~5 MB, one-time)…', 25+Math.round(m.progress*40));
+        else if(m.status==='initializing api')             prog('Initialising…',                     65);
+        else if(m.status==='recognizing text')             prog('Reading your menu…',                65+Math.round(m.progress*35));
       }
     });
     prog('Done — reviewing results', 100);
@@ -438,17 +385,73 @@ async function readMenuLocal(){
     if(!text||text.trim().length<5) throw new Error('no text');
     var items=parseOcrToMenu(text);
     if(!items.length) throw new Error('no items');
-    state.menu=items;
+    state.menu=(state.menu||[]).concat(items);
     var pill=$('reviewPill'); if(pill) pill.textContent='OCR read it — check it over';
     renderEditor(); goStep('s-review');
   }catch(err){
     $('readStat').innerHTML='<span class="err">Couldn\'t extract items from that photo. Try a flatter, well-lit shot — or use manual entry.</span>';
   }finally{
-    btn.querySelector('strong').textContent='Read on this device';
+    btn.querySelector('strong').textContent='Read menu (OCR)';
     syncUpload();
     $('ocrProg').classList.add('hidden');
     $('ocrFill').style.width='0%';
   }
+}
+
+/* Grayscale + upscale-if-small + Otsu binarisation — the standard
+   pre-processing pass that makes Tesseract reliably read photographed
+   or screenshotted menus instead of just clean scans. */
+function preprocessForOcr(b64, type){
+  return new Promise(function(resolve, reject){
+    var img=new Image();
+    img.onload=function(){
+      try{
+        var w=img.width, h=img.height;
+        var minW=2000;
+        var scale = w<minW ? (minW/w) : 1;
+        var cw=Math.round(w*scale), ch=Math.round(h*scale);
+        var c=document.createElement('canvas'); c.width=cw; c.height=ch;
+        var ctx=c.getContext('2d');
+        ctx.imageSmoothingEnabled=true;
+        if('imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality='high';
+        ctx.drawImage(img,0,0,cw,ch);
+
+        var imgData=ctx.getImageData(0,0,cw,ch);
+        var d=imgData.data, n=cw*ch;
+        var gray=new Uint8ClampedArray(n);
+        var hist=new Array(256).fill(0);
+        for(var i=0,p=0;i<d.length;i+=4,p++){
+          var g=(0.299*d[i]+0.587*d[i+1]+0.114*d[i+2])|0;
+          gray[p]=g; hist[g]++;
+        }
+
+        /* Otsu's method — picks the threshold that best separates
+           text from background instead of a fixed guess. */
+        var total=n, sumAll=0;
+        for(var t=0;t<256;t++) sumAll+=t*hist[t];
+        var sumB=0, wB=0, maxVar=0, threshold=128;
+        for(var t2=0;t2<256;t2++){
+          wB+=hist[t2];
+          if(wB===0) continue;
+          var wF=total-wB;
+          if(wF===0) break;
+          sumB+=t2*hist[t2];
+          var mB=sumB/wB, mF=(sumAll-sumB)/wF;
+          var between=wB*wF*(mB-mF)*(mB-mF);
+          if(between>maxVar){ maxVar=between; threshold=t2; }
+        }
+
+        for(var i2=0,p2=0;i2<d.length;i2+=4,p2++){
+          var v = gray[p2]>threshold ? 255 : 0;
+          d[i2]=d[i2+1]=d[i2+2]=v;
+        }
+        ctx.putImageData(imgData,0,0);
+        resolve(c);
+      }catch(err){ reject(err); }
+    };
+    img.onerror=function(){ reject(new Error('image load failed')); };
+    img.src='data:'+type+';base64,'+b64;
+  });
 }
 
 function parseOcrToMenu(raw){
