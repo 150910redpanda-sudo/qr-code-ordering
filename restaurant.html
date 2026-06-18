@@ -37,33 +37,6 @@ body { padding-top: var(--nav); padding-bottom: 80px; }
 .method-text strong { display: block; font-size: 14.5px; font-weight: 600; color: var(--ink); }
 .method-text span   { display: block; font-size: 12.5px; color: var(--muted); margin-top: 2px; }
 
-/* Confirm-scan overlay (Lens-style highlighted text on the photo) */
-.confirm-wrap { position: relative; display: inline-block; max-width: 100%; line-height: 0; }
-.confirm-wrap img { max-width: 100%; display: block; border-radius: var(--r); }
-.ocr-box {
-  position: absolute; box-sizing: border-box;
-  background: rgba(42,107,71,.16); border: 1.5px solid rgba(42,107,71,.55);
-  border-radius: 3px; color: #16331f; font-family: inherit; font-weight: 600;
-  overflow: visible; white-space: pre; cursor: text;
-  display: flex; align-items: center; padding: 0 2px;
-}
-.ocr-box:focus { background: #fff; border-color: var(--green); outline: none; box-shadow: 0 0 0 3px var(--green-lt); z-index: 2; }
-
-/* Items missing a price must be filled in before a QR can be generated */
-.epr.price-missing { border-color: #d33; background: rgba(221,51,51,.06); }
-.epr.price-missing::placeholder { color: #d33; }
-
-/* Add-on options nested under their parent item, not as separate rows */
-.edititem { border-bottom: 1px solid var(--bd); padding: 9px 0; }
-.edititem:last-child { border-bottom: 0; }
-.edititem .editrow { padding: 0; border-bottom: 0; }
-.addon-list { margin: 6px 0 2px 22px; padding-left: 12px; border-left: 2px solid var(--bd-md); display: flex; flex-direction: column; gap: 6px; }
-.addonrow { display: flex; gap: 8px; align-items: center; }
-.addonrow input { padding: 7px 10px; font-size: 12.5px; }
-.addonrow .ean { flex: 1; }
-.addonrow .eap { width: 78px; }
-.addopt-btn { align-self: flex-start; font-size: 12px; padding: 5px 10px; opacity: .8; }
-
 /* Download QR hint */
 .qr-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 18px; }
 
@@ -151,9 +124,13 @@ body { padding-top: var(--nav); padding-bottom: 80px; }
     <div class="card mt">
       <label class="fld">How would you like to read the menu?</label>
       <div class="method-group">
-        <button id="localBtn" class="method-btn primary-method" disabled onclick="readMenuLocal()">
+        <button id="readBtn" class="method-btn primary-method" disabled onclick="readMenu()">
+          <span class="method-icon">✨</span>
+          <div class="method-text"><strong>Read with AI (recommended)</strong><span>Uses Claude AI — fastest, most accurate. Requires internet.</span></div>
+        </button>
+        <button id="localBtn" class="method-btn" disabled onclick="readMenuLocal()">
           <span class="method-icon">📍</span>
-          <div class="method-text"><strong>Read menu (OCR)</strong><span>Uses Tesseract OCR — works offline, on this device. Downloads ~5 MB once.</span></div>
+          <div class="method-text"><strong>Read on this device</strong><span>Uses Tesseract OCR — works offline. Downloads ~5 MB once.</span></div>
         </button>
         <button id="manualBtn" class="method-btn" disabled onclick="skipToManual()">
           <span class="method-icon">✏️</span>
@@ -170,23 +147,6 @@ body { padding-top: var(--nav); padding-bottom: 80px; }
     <button class="btn btn-g btn-w mt" onclick="goStep('s-details')">← Back</button>
   </div>
 
-  <!-- ── STEP 2b: Confirm scan (Lens-style overlay) ── -->
-  <div id="s-confirm" class="step-panel hidden">
-    <div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <h2 style="font-size:18px">Check what we read</h2>
-        <span class="pill">Tap text to fix it</span>
-      </div>
-      <p class="note">We've highlighted every line we recognised, right on top of your photo. Tap any piece of text to correct it before continuing.</p>
-      <div id="confirmWrap" class="confirm-wrap mt">
-        <img id="confirmImg" alt="Scanned menu"/>
-      </div>
-      <p id="confirmStat" class="stat"></p>
-    </div>
-    <button class="btn btn-p btn-w mt" onclick="confirmScan()">✓ Looks correct — continue</button>
-    <button class="btn btn-g btn-w mt" onclick="goStep('s-upload')">← Retake or choose another photo</button>
-  </div>
-
   <!-- ── STEP 3: Review ── -->
   <div id="s-review" class="step-panel hidden">
     <div class="card">
@@ -197,20 +157,7 @@ body { padding-top: var(--nav); padding-bottom: 80px; }
       <p class="note">Tap any field to edit it. Hit ✕ to remove something. Add anything that got missed.</p>
       <div id="editor" style="margin-top:12px"></div>
       <button class="btn btn-g btn-sm mt" onclick="addItem()">＋ Add an item</button>
-      <p id="reviewErr" class="stat"></p>
     </div>
-
-    <div class="card mt">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:16px">
-        <div>
-          <label class="fld">Brand colour</label>
-          <p id="themeNote" class="note" style="margin-top:2px">Picked up from your menu photo — this colours your customers' ordering page.</p>
-        </div>
-        <input type="color" id="themeColor" value="#2A6B47" oninput="setThemeColor(this.value)" aria-label="Brand colour"
-          style="width:48px;height:48px;border:none;border-radius:10px;cursor:pointer;padding:0;background:none;flex-shrink:0"/>
-      </div>
-    </div>
-
     <button class="btn btn-p btn-w mt" id="makeQrBtn" onclick="makeQR()">Generate QR code →</button>
     <button class="btn btn-g btn-w mt" onclick="goStep('s-upload')">← Back to menu</button>
   </div>
@@ -307,8 +254,7 @@ body { padding-top: var(--nav); padding-bottom: 80px; }
 var state = {
   restaurant:'', phone:'', currency:'£',
   imgB64:null, imgType:'image/jpeg',
-  menu:[], cart:{}, lastOrderText:'',
-  theme:{accent:null, auto:true}
+  menu:[], cart:{}, lastOrderText:''
 };
 var $ = function(id){ return document.getElementById(id); };
 function money(n){ return state.currency + (Number(n)||0).toFixed(2); }
@@ -316,8 +262,8 @@ function money(n){ return state.currency + (Number(n)||0).toFixed(2); }
 /* ============================================================
    Wizard navigation
    ============================================================ */
-var STEPS = ['s-details','s-upload','s-confirm','s-review','s-qr'];
-var STEP_N = { 's-details':1, 's-upload':2, 's-confirm':2, 's-review':3, 's-qr':4 };
+var STEPS = ['s-details','s-upload','s-review','s-qr'];
+var STEP_N = { 's-details':1, 's-upload':2, 's-review':3, 's-qr':4 };
 
 function goStep(id) {
   STEPS.forEach(function(s){ var el=$(s); if(el) el.classList.toggle('hidden', s!==id); });
@@ -355,6 +301,7 @@ function nextToUpload(){
    ============================================================ */
 function syncUpload(){
   var has = !!state.imgB64;
+  $('readBtn').disabled  = !has;
   $('localBtn').disabled = !has;
   $('manualBtn').disabled = false; // manual never needs a photo
 }
@@ -389,7 +336,6 @@ function onFile(e){
         state.imgType=f.type;
         $('prev').innerHTML='<img src="'+reader.result+'" alt="Menu preview"/>';
         $('prev').classList.remove('hidden');
-        extractBrandColor(img);
         syncUpload(); return;
       }
 
@@ -404,7 +350,6 @@ function onFile(e){
       state.imgB64=url.split(',')[1]; state.imgType='image/jpeg';
       $('prev').innerHTML='<img src="'+url+'" alt="Menu preview"/>';
       $('prev').classList.remove('hidden');
-      extractBrandColor(img);
       syncUpload();
     };
     img.src=reader.result;
@@ -413,83 +358,54 @@ function onFile(e){
 }
 
 /* ============================================================
-   Brand colour — pick a usable accent out of the menu photo so the
-   customer ordering page can be tailored to this restaurant's look,
-   instead of every restaurant getting the same default green.
+   Step 2 → 3: AI read (Claude via /api/read-menu)
    ============================================================ */
-function extractBrandColor(imgEl){
-  state.theme.auto=true;
+async function readMenu(){
+  var btn=$('readBtn');
+  btn.disabled=true;
+  btn.querySelector('strong').textContent='Reading your menu…';
+  $('readStat').textContent='This usually takes a few seconds.';
+
+  var prompt="You are a menu digitiser. Read this photo of a restaurant menu and extract every food and drink item. "
+    +"Respond with ONLY valid JSON and nothing else — no markdown, no commentary. Use exactly this schema:\n"
+    +'{"items":[{"name":"string","price":number_or_null,"desc":"string","section":"string"}]}\n'
+    +"Rules: price is a plain number with no currency symbol; null if not shown. "
+    +"desc is a short description (max ~8 words) or empty string. "
+    +"section is the heading the item sits under (e.g. Starters, Mains, Drinks); if none use \"Menu\". "
+    +"Keep names exactly as written. Do not invent items.";
+
   try{
-    var sw=100, sh=100;
-    var c=document.createElement('canvas'); c.width=sw; c.height=sh;
-    var ctx=c.getContext('2d');
-    ctx.drawImage(imgEl,0,0,sw,sh);
-    var data=ctx.getImageData(0,0,sw,sh).data;
-    var buckets={};
-    for(var i=0;i<data.length;i+=4){
-      if(data[i+3]<200) continue;
-      var hsl=rgbToHsl(data[i],data[i+1],data[i+2]);
-      var h=hsl[0], s=hsl[1], l=hsl[2];
-      /* Skip near-white/near-black/grey pixels — that's paper and
-         printed text, not the restaurant's brand colour. */
-      if(s<0.18||l<0.12||l>0.88) continue;
-      var key=Math.floor(h/15)*15;
-      if(!buckets[key]) buckets[key]={count:0,sSum:0,lSum:0,hSum:0};
-      buckets[key].count++; buckets[key].sSum+=s; buckets[key].lSum+=l; buckets[key].hSum+=h;
-    }
-    var best=null,bestScore=0;
-    Object.keys(buckets).forEach(function(k){
-      var bk=buckets[k], score=bk.count*(bk.sSum/bk.count);
-      if(score>bestScore){ bestScore=score; best=bk; }
+    var res=await fetch('/api/read-menu',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({image:state.imgB64, imageType:state.imgType, prompt:prompt})
     });
-    if(!best||best.count<8){ state.theme.accent=null; updateThemeUI(); return; }
-    var avgH=best.hSum/best.count, avgS=Math.max(best.sSum/best.count,0.45);
-    /* Clamp lightness so the colour stays dark enough for white button
-       text to stay readable on top of it. */
-    var avgL=Math.min(Math.max(best.lSum/best.count,0.28),0.48);
-    var rgb=hslToRgb(avgH/360,avgS,avgL);
-    state.theme.accent=rgbToHex(rgb[0],rgb[1],rgb[2]);
-  }catch(err){ state.theme.accent=null; }
-  updateThemeUI();
-}
-
-function updateThemeUI(){
-  var sw=$('themeColor'), note=$('themeNote');
-  if(!sw) return;
-  var hex=state.theme.accent||'#2A6B47';
-  sw.value=hex;
-  if(note) note.textContent = state.theme.accent
-    ? 'Picked up from your menu photo — this colours your customers\' ordering page. Tap the swatch to change it.'
-    : 'We couldn\'t pick out a strong brand colour from your photo, so we\'re using our default green. Tap the swatch to set your own.';
-}
-
-function setThemeColor(v){
-  state.theme.accent=v; state.theme.auto=false;
-  var note=$('themeNote'); if(note) note.textContent='Your chosen brand colour — this colours your customers\' ordering page.';
-}
-
-function rgbToHsl(r,g,b){
-  r/=255; g/=255; b/=255;
-  var max=Math.max(r,g,b), min=Math.min(r,g,b), l=(max+min)/2, d=max-min, h=0, s=0;
-  if(d!==0){
-    s = l>0.5 ? d/(2-max-min) : d/(max+min);
-    if(max===r) h=((g-b)/d+(g<b?6:0));
-    else if(max===g) h=(b-r)/d+2;
-    else h=(r-g)/d+4;
-    h*=60;
+    var data=await res.json();
+    if(!res.ok) throw new Error(data.error||'API error');
+    var text=(data.content||[]).filter(function(b){return b.type==='text';}).map(function(b){return b.text;}).join('');
+    var json=extractJSON(text);
+    var parsed=JSON.parse(json);
+    var items=(parsed.items||[]).filter(function(it){return it&&it.name;});
+    if(!items.length) throw new Error('no items');
+    state.menu=items.map(function(it){
+      return {name:String(it.name).trim(), price:(it.price==null?null:Number(it.price)), desc:(it.desc?String(it.desc).trim():''), section:(it.section?String(it.section).trim():'Menu')};
+    });
+    var pill=$('reviewPill'); if(pill) pill.textContent='Looks good — fix anything that\'s off';
+    renderEditor(); goStep('s-review');
+  }catch(err){
+    $('readStat').innerHTML='<span class="err">Couldn\'t read that one. Try a clearer, well-lit photo — or use Local OCR or manual entry.</span>';
+  }finally{
+    btn.querySelector('strong').textContent='Read with AI (recommended)';
+    syncUpload();
   }
-  return [h,s,l];
 }
-function hslToRgb(h,s,l){
-  function f(n){
-    var k=(n+h*12)%12;
-    var a=s*Math.min(l,1-l);
-    return l-a*Math.max(-1,Math.min(k-3,Math.min(9-k,1)));
-  }
-  return [Math.round(f(0)*255),Math.round(f(8)*255),Math.round(f(4)*255)];
-}
-function rgbToHex(r,g,b){
-  return '#'+[r,g,b].map(function(v){ return Math.max(0,Math.min(255,v)).toString(16).padStart(2,'0'); }).join('');
+
+function extractJSON(t){
+  if(!t) throw new Error('empty');
+  t=t.replace(/```json/gi,'').replace(/```/g,'').trim();
+  var a=t.indexOf('{'), b=t.lastIndexOf('}');
+  if(a===-1||b===-1) throw new Error('no json');
+  return t.slice(a,b+1);
 }
 
 /* ============================================================
@@ -497,7 +413,7 @@ function rgbToHex(r,g,b){
    ============================================================ */
 async function readMenuLocal(){
   var btn=$('localBtn');
-  btn.disabled=true;
+  btn.disabled=true; $('readBtn').disabled=true;
   btn.querySelector('strong').textContent='Starting OCR engine…';
   $('ocrProg').classList.remove('hidden');
   $('readStat').textContent='';
@@ -508,275 +424,31 @@ async function readMenuLocal(){
   }
 
   try{
-    prog('Preparing image for OCR…', 5);
-    var canvas=await preprocessForOcr(state.imgB64, state.imgType);
-
-    function recognize(target, pctFrom, pctTo){
-      return Tesseract.recognize(target,'eng',{
-        tessedit_pageseg_mode:Tesseract.PSM.AUTO,
-        preserve_interword_spaces:'1',
-        logger:function(m){
-          if(m.status==='loading tesseract core')            prog('Loading OCR engine…', pctFrom+Math.round(m.progress*(pctTo-pctFrom)*0.3));
-          else if(m.status==='loading language traineddata') prog('Downloading language model (~5 MB, one-time)…', pctFrom+Math.round(m.progress*(pctTo-pctFrom)*0.6));
-          else if(m.status==='initializing api')             prog('Initialising…', pctFrom+Math.round((pctTo-pctFrom)*0.7));
-          else if(m.status==='recognizing text')             prog('Reading your menu…', pctFrom+Math.round(m.progress*(pctTo-pctFrom)*0.3)+Math.round((pctTo-pctFrom)*0.7));
-        }
-      });
-    }
-
-    var firstPass=await recognize(canvas, 5, 55);
-    var lines=(firstPass.data.lines||[]).filter(function(l){return l.text&&l.text.trim();});
-    if(!firstPass.data.text||firstPass.data.text.trim().length<5) throw new Error('no text');
-
-    /* Many menus are laid out in two columns. A single OCR pass over the
-       whole width often merges an item from the left column and one from
-       the right column onto the same "line" because their rows line up
-       — re-OCRing each column separately (once we can see there really
-       is a column gutter) fixes that instead of guessing at parse time. */
-    var gutter=detectColumnGutter(firstPass.data.words||[], canvas.width);
-    if(gutter){
-      prog('Two-column menu detected — reading each column…', 58);
-      var leftCanvas=cropCanvas(canvas, 0, gutter.x0);
-      var rightCanvas=cropCanvas(canvas, gutter.x1, canvas.width);
-      var leftPass=await recognize(leftCanvas, 58, 78);
-      var rightPass=await recognize(rightCanvas, 78, 98);
-      var leftLines=(leftPass.data.lines||[]).filter(function(l){return l.text&&l.text.trim();});
-      var rightLines=(rightPass.data.lines||[]).filter(function(l){return l.text&&l.text.trim();})
-        .map(function(l){
-          var b=l.bbox;
-          return {text:l.text, confidence:l.confidence, bbox:{x0:b.x0+gutter.x1, x1:b.x1+gutter.x1, y0:b.y0, y1:b.y1}};
-        });
-      if(leftLines.length+rightLines.length >= lines.length*0.6){
-        lines=leftLines.concat(rightLines);
+    var url='data:'+state.imgType+';base64,'+state.imgB64;
+    var result=await Tesseract.recognize(url,'eng',{
+      logger:function(m){
+        if(m.status==='loading tesseract core')            prog('Loading OCR engine…',               Math.round(m.progress*25));
+        else if(m.status==='loading language traineddata') prog('Downloading language model (~5 MB, one-time)…', 25+Math.round(m.progress*45));
+        else if(m.status==='initializing api')             prog('Initialising…',                     70);
+        else if(m.status==='recognizing text')             prog('Reading your menu…',                70+Math.round(m.progress*30));
       }
-    }
-
+    });
     prog('Done — reviewing results', 100);
-    if(!lines.length) throw new Error('no lines');
-
-    /* If the photo was too blurry/dark/distorted to actually read, Tesseract
-       doesn't fail cleanly — it returns confident-looking nonsense ("RS
-       TETE100", "m@ﬁﬁ\".'"). Bail out to the normal "couldn't read that"
-       message instead of dumping dozens of garbage rows into the review
-       screen for the restaurant to clean up by hand. */
-    var avgConf=lines.reduce(function(s,l){return s+(l.confidence==null?70:l.confidence);},0)/lines.length;
-    var gibberishCount=lines.filter(function(l){return isGibberishLine(l.text);}).length;
-    if(avgConf<40 || gibberishCount/lines.length>0.45) throw new Error('scan quality too low');
-
-    showConfirmOverlay(lines, canvas.width, canvas.height);
-    goStep('s-confirm');
+    var text=result.data.text;
+    if(!text||text.trim().length<5) throw new Error('no text');
+    var items=parseOcrToMenu(text);
+    if(!items.length) throw new Error('no items');
+    state.menu=items;
+    var pill=$('reviewPill'); if(pill) pill.textContent='OCR read it — check it over';
+    renderEditor(); goStep('s-review');
   }catch(err){
     $('readStat').innerHTML='<span class="err">Couldn\'t extract items from that photo. Try a flatter, well-lit shot — or use manual entry.</span>';
   }finally{
-    btn.querySelector('strong').textContent='Read menu (OCR)';
+    btn.querySelector('strong').textContent='Read on this device';
     syncUpload();
     $('ocrProg').classList.add('hidden');
     $('ocrFill').style.width='0%';
   }
-}
-
-/* Look for a vertical band with very little text in the middle of the
-   page — the gutter between two menu columns. Real menus almost always
-   have a handful of full-width lines (a banner sentence, a footnote,
-   a centred boxed section) that cross right through where the gutter
-   would be — a single line like that shouldn't be enough to block
-   detection, so this counts *density* across the whole page height
-   and looks for a valley, rather than requiring an absolute zero gap. */
-function detectColumnGutter(words, canvasWidth){
-  var density=new Int32Array(canvasWidth);
-  var leftCount=0, rightCount=0;
-  words.forEach(function(w){
-    var b=w.bbox; if(!b) return;
-    if((b.x1-b.x0) > canvasWidth*0.5) return; // ignore full-width lines/headings
-    for(var x=Math.max(0,b.x0); x<Math.min(canvasWidth,b.x1); x++) density[x]++;
-  });
-  var loBound=Math.round(canvasWidth*0.2), hiBound=Math.round(canvasWidth*0.8);
-  if(hiBound<=loBound) return null;
-
-  /* Reference density = typical column-text density, taken from the
-     busiest parts of the central band. The gutter must be dramatically
-     emptier than that, not just "less busy". */
-  var sorted=[];
-  for(var x=loBound; x<=hiBound; x++) sorted.push(density[x]);
-  sorted.sort(function(a,b){return a-b;});
-  var ref=sorted[Math.floor(sorted.length*0.85)];
-  if(ref<=0) return null;
-  var threshold=Math.max(1, ref*0.22);
-
-  var bestStart=-1, bestLen=0, runStart=-1;
-  for(var x2=loBound; x2<=hiBound; x2++){
-    if(density[x2]<=threshold){ if(runStart===-1) runStart=x2; }
-    else { if(runStart!==-1){ var len=x2-runStart; if(len>bestLen){ bestLen=len; bestStart=runStart; } runStart=-1; } }
-  }
-  if(runStart!==-1){ var len2=hiBound+1-runStart; if(len2>bestLen){ bestLen=len2; bestStart=runStart; } }
-
-  var minGutter=Math.max(20, canvasWidth*0.012);
-  if(bestStart===-1 || bestLen<minGutter) return null;
-
-  var gMid=bestStart+bestLen/2;
-  words.forEach(function(w){
-    var b=w.bbox; if(!b) return;
-    if((b.x1-b.x0) > canvasWidth*0.5) return;
-    if((b.x0+b.x1)/2 < gMid) leftCount++; else rightCount++;
-  });
-  if(leftCount<5 || rightCount<5) return null;
-  return {x0:bestStart, x1:bestStart+bestLen};
-}
-
-function cropCanvas(srcCanvas, x0, x1){
-  var w=Math.max(1, Math.round(x1-x0)), h=srcCanvas.height;
-  var c=document.createElement('canvas'); c.width=w; c.height=h;
-  c.getContext('2d').drawImage(srcCanvas, x0, 0, w, h, 0, 0, w, h);
-  return c;
-}
-
-/* Grayscale + upscale-if-small + Otsu binarisation — the standard
-   pre-processing pass that makes Tesseract reliably read photographed
-   or screenshotted menus instead of just clean scans. */
-function preprocessForOcr(b64, type){
-  return new Promise(function(resolve, reject){
-    var img=new Image();
-    img.onload=function(){
-      try{
-        var w=img.width, h=img.height;
-        var minW=2000;
-        var scale = w<minW ? (minW/w) : 1;
-        var cw=Math.round(w*scale), ch=Math.round(h*scale);
-        var c=document.createElement('canvas'); c.width=cw; c.height=ch;
-        var ctx=c.getContext('2d');
-        ctx.imageSmoothingEnabled=true;
-        if('imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality='high';
-        ctx.drawImage(img,0,0,cw,ch);
-
-        var imgData=ctx.getImageData(0,0,cw,ch);
-        var d=imgData.data, n=cw*ch;
-        var gray=new Uint8ClampedArray(n);
-        var hist=new Array(256).fill(0);
-        for(var i=0,p=0;i<d.length;i+=4,p++){
-          var g=(0.299*d[i]+0.587*d[i+1]+0.114*d[i+2])|0;
-          gray[p]=g; hist[g]++;
-        }
-
-        /* Otsu's method — picks the threshold that best separates
-           text from background instead of a fixed guess. */
-        var total=n, sumAll=0;
-        for(var t=0;t<256;t++) sumAll+=t*hist[t];
-        var sumB=0, wB=0, maxVar=0, threshold=128;
-        for(var t2=0;t2<256;t2++){
-          wB+=hist[t2];
-          if(wB===0) continue;
-          var wF=total-wB;
-          if(wF===0) break;
-          sumB+=t2*hist[t2];
-          var mB=sumB/wB, mF=(sumAll-sumB)/wF;
-          var between=wB*wF*(mB-mF)*(mB-mF);
-          if(between>maxVar){ maxVar=between; threshold=t2; }
-        }
-
-        for(var i2=0,p2=0;i2<d.length;i2+=4,p2++){
-          var v = gray[p2]>threshold ? 255 : 0;
-          d[i2]=d[i2+1]=d[i2+2]=v;
-        }
-        ctx.putImageData(imgData,0,0);
-        resolve(c);
-      }catch(err){ reject(err); }
-    };
-    img.onerror=function(){ reject(new Error('image load failed')); };
-    img.src='data:'+type+';base64,'+b64;
-  });
-}
-
-/* ============================================================
-   Step 2 → 2b: Confirm-scan overlay (Lens/Translate-style)
-   Shows the photo with every recognised line highlighted in place,
-   editable inline, before it's parsed into structured menu items.
-   ============================================================ */
-var _ocrLines=null, _ocrW=0, _ocrH=0;
-
-function showConfirmOverlay(lines, canvasW, canvasH){
-  _ocrLines = lines.map(function(l){ return {text:l.text.replace(/\n+$/,''), bbox:l.bbox, el:null}; });
-  _ocrW=canvasW; _ocrH=canvasH;
-  $('confirmStat').textContent='';
-
-  var img=$('confirmImg');
-  img.onload=function(){ layoutConfirmOverlay(); };
-  img.src='data:'+state.imgType+';base64,'+state.imgB64;
-
-  var wrap=$('confirmWrap');
-  Array.prototype.slice.call(wrap.querySelectorAll('.ocr-box')).forEach(function(b){ b.remove(); });
-  _ocrLines.forEach(function(line){
-    var box=document.createElement('div');
-    box.className='ocr-box';
-    box.contentEditable='true';
-    box.spellcheck=false;
-    box.textContent=line.text;
-    wrap.appendChild(box);
-    line.el=box;
-  });
-  /* image may already be loaded (cached data URL) — onload won't refire */
-  if(img.complete && img.naturalWidth) layoutConfirmOverlay();
-}
-
-function layoutConfirmOverlay(){
-  if(!_ocrLines) return;
-  var img=$('confirmImg');
-  var scaleX=img.clientWidth/_ocrW, scaleY=img.clientHeight/_ocrH;
-  if(!scaleX||!scaleY) return;
-  _ocrLines.forEach(function(line){
-    if(!line.el) return;
-    var b=line.bbox;
-    var left=b.x0*scaleX, top=b.y0*scaleY;
-    var w=(b.x1-b.x0)*scaleX, h=(b.y1-b.y0)*scaleY;
-    line.el.style.left=left+'px';
-    line.el.style.top=top+'px';
-    line.el.style.width=Math.max(w,14)+'px';
-    line.el.style.height=Math.max(h,14)+'px';
-    line.el.style.fontSize=Math.max(10, h*0.68)+'px';
-  });
-}
-
-window.addEventListener('resize', function(){
-  var panel=$('s-confirm');
-  if(panel && !panel.classList.contains('hidden')) layoutConfirmOverlay();
-});
-
-function confirmScan(){
-  if(!_ocrLines || !_ocrLines.length){ goStep('s-upload'); return; }
-  var rawText=_ocrLines.map(function(l){ return (l.el?l.el.textContent:l.text).trim(); })
-                        .filter(Boolean).join('\n');
-  var items=parseOcrToMenu(rawText);
-  if(!items.length){
-    $('confirmStat').innerHTML='<span class="err">Couldn\'t turn that into menu items — try editing the highlighted text so each line reads "Item name      Price", or go back and retake the photo.</span>';
-    return;
-  }
-  state.menu=(state.menu||[]).concat(items);
-  var pill=$('reviewPill'); if(pill) pill.textContent='OCR read it — check it over';
-  renderEditor(); goStep('s-review');
-}
-
-/* Catches OCR noise from illegible photos — text that's mostly tiny
-   fragments or symbol/ligature soup rather than real words. Used both
-   to bail out early on a fully-failed scan and to drop individual
-   junk lines from an otherwise readable one. */
-function isGibberishLine(raw){
-  var s=(raw||'').trim();
-  if(!s) return true;
-  var letters=(s.match(/[A-Za-zÀ-ÖØ-öø-ÿ]/g)||[]).length;
-  var total=s.replace(/\s/g,'').length;
-  if(total===0) return true;
-  var toks=s.split(/\s+/).filter(Boolean);
-  var shortToks=toks.filter(function(t){ return t.replace(/[^A-Za-zÀ-ÖØ-öø-ÿ0-9]/g,'').length<=2; }).length;
-  var shortRatio=toks.length ? shortToks/toks.length : 1;
-  /* A multi-word line that's mostly 1-2 character fragments
-     ("R ST Bciryeiand ;o") is noise, not a dish description. */
-  if(toks.length>=2 && shortRatio>0.55) return true;
-  /* A single blob that's mostly symbols/ligatures, not letters
-     ("m@ﬁﬁ\".'") */
-  if(toks.length===1 && (letters/total)<0.55 && total>=3) return true;
-  /* Letters glued straight onto a long digit run with nothing between
-     them ("TETE100") — not how real item names or prices look. */
-  if(/^[A-Za-z]{1,6}\d{3,}$/.test(s.replace(/\s/g,''))) return true;
-  return false;
 }
 
 function parseOcrToMenu(raw){
@@ -785,68 +457,17 @@ function parseOcrToMenu(raw){
   var lines=text.split('\n').map(function(l){return l.trim();}).filter(function(l){return l.length>1;});
   var PRICE_RE=/(?:[£$€¥₹])\s*(\d{1,3}(?:[.,]\d{1,2})?)|(\d{1,3}(?:[.,]\d{2}))\s*(?:[£$€])/;
   var SEC_RE=/^(starters?|mains?|desserts?|drinks?|sides?|breakfast|lunch|dinner|snacks?|soups?|salads?|pizza|pasta|burgers?|specials?|cocktails?|wines?|beers?|soft\s+drinks?|hot\s+drinks?|appetiz|seafood|vegetarian|vegan|kids?|children|sharing|extras?|sauces?)/i;
-  /* Lines that describe a customisation of the dish above them
-     (e.g. "Make it Amatriciana by adding cubed pancetta", "Add
-     bacon +£1") are options on that item, not menu items of their own. */
-  var ADDON_RE=/^(add\b|add[\s-]?on\b|make it\b|extra\b|with\b|upgrade\b|swap\b|optional\b|on request\b|\+\s*\w)/i;
-  /* Boilerplate that shows up on menus but isn't a dish: addresses,
-     social-media rows, footnotes about allergens/vegan options/service
-     charge. Drop these outright instead of turning them into items. */
-  var NOISE_RE=/^(please\b|dishes marked|can be made|vegan cheese|gluten free|extra toppings|allergen|service charge|all prices|prices (are|include)|follow us|find us|opening hours?|mon(day)?[\s-]|tue|wed|thu|fri(day)?[\s-]|sat(urday)?[\s-]|sun(day)?[\s-])/i;
-  var ADDRESS_RE=/\b([A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2})\b|\b(road|street|rd|ave|avenue|lane|ln)\b.{0,15}\d|\d{1,4}\s+\w+\s+(road|street|rd|ave|lane)/i;
-  function isNoise(l){
-    var c=l.trim();
-    if(NOISE_RE.test(c)||ADDRESS_RE.test(c)) return true;
-    /* Rows of social-media glyphs/initials like "o f @ W" */
-    var toks=c.split(/\s+/);
-    if(toks.length>=3 && toks.every(function(t){ return t.replace(/[^\w@#]/g,'').length<=2; })) return true;
-    return false;
-  }
   function xprice(l){ var m=l.match(PRICE_RE); if(!m) return null; var n=parseFloat((m[1]||m[2]).replace(',','.')); return(n>0&&n<999)?n:null; }
   function strip(l){ return l.replace(PRICE_RE,'').replace(/\s+/g,' ').replace(/^[\s\-–—·•.]+|[\s\-–—·•.]+$/g,'').trim(); }
-  /* Small allergen/vegan icons printed next to a dish name OCR as
-     garbage glyph clusters ("Q@", "OO", "¢", "0®") stuck on the end
-     of the name — strip those without touching real words. */
-  function cleanName(s){
-    s=s.replace(/\s+[A-Z0-9@°¢®©()]{1,4}$/,'');
-    s=s.replace(/[@°¢®©][\w()@°¢®©]{0,3}$/,'');
-    return s.trim();
-  }
-  function isSec(l){
-    var c=l.replace(/[-_=*•·]/g,'').trim();
-    if(c.length<2||c.length>55||xprice(c)!==null) return false;
-    if(SEC_RE.test(c)) return true;
-    /* A short ALL-CAPS line ("ANTIPASTI", "LE ARANCINE") is a heading.
-       A long one ("FRESH SOUP OF THE DAY WITH TOASTED BREAD") is just
-       this menu's style for dish descriptions — don't swallow those. */
-    if(c===c.toUpperCase()&&/[A-Z]/.test(c)&&!/\d/.test(c)&&c.length<=24&&c.split(/\s+/).length<=4) return true;
-    return false;
-  }
+  function isSec(l){ var c=l.replace(/[-_=*•·]/g,'').trim(); if(c.length<2||c.length>55||xprice(c)!==null) return false; if(SEC_RE.test(c)) return true; if(c===c.toUpperCase()&&/[A-Z]/.test(c)&&!/\d/.test(c)) return true; return false; }
   var items=[],sec='Menu',i=0;
   while(i<lines.length){
     var line=lines[i];
     if(isSec(line)){ sec=line.replace(/[-_=*•·]/g,'').trim(); i++; continue; }
-    if(isNoise(line)){ i++; continue; }
-    if(isGibberishLine(line)){ i++; continue; }
-    if(items.length && ADDON_RE.test(line.replace(/^[-•*]+\s*/,''))){
-      var last=items[items.length-1];
-      if(!last.addons) last.addons=[];
-      last.addons.push({label:cleanName(strip(line))||line, price:xprice(line)});
-      i++; continue;
-    }
     var p=xprice(line);
-    if(p!==null){ var nm=cleanName(strip(line)); if(nm.length>1){ var desc=''; var nx=lines[i+1]||''; if(nx&&!isSec(nx)&&!isNoise(nx)&&!isGibberishLine(nx)&&xprice(nx)===null&&nx.length>3&&nx.length<120&&!ADDON_RE.test(nx)){ desc=nx; i++; } items.push({name:nm,price:p,desc:desc,section:sec,addons:[]}); } i++; continue; }
+    if(p!==null){ var nm=strip(line); if(nm.length>1){ var desc=''; var nx=lines[i+1]||''; if(nx&&!isSec(nx)&&xprice(nx)===null&&nx.length>3&&nx.length<120){ desc=nx; i++; } items.push({name:nm,price:p,desc:desc,section:sec}); } i++; continue; }
     var np=xprice(lines[i+1]||'');
-    if(np!==null&&!isSec(line)&&line.length>1&&line.length<80){ items.push({name:cleanName(line),price:np,desc:'',section:sec,addons:[]}); i+=2; continue; }
-    /* No price on this line or the next — still a real menu entry
-       (e.g. "chips", "mixed salad"), so keep it with price:null
-       instead of silently dropping it. We deliberately don't try to
-       pull the *next* line in as a description here: in this same
-       "no price" shape, two consecutive lines are usually two
-       independent items (e.g. "chips" / "onion rings"), not a dish
-       and its description — guessing wrong would silently merge two
-       real menu items into one. */
-    if(line.length>1&&line.length<120){ items.push({name:cleanName(line),price:null,desc:'',section:sec,addons:[]}); }
+    if(np!==null&&!isSec(line)&&line.length>1&&line.length<80){ items.push({name:line,price:np,desc:'',section:sec}); i+=2; continue; }
     i++;
   }
   return items;
@@ -856,7 +477,7 @@ function parseOcrToMenu(raw){
    Step 2 → 3: Manual entry
    ============================================================ */
 function skipToManual(){
-  if(!state.menu.length) state.menu.push({name:'',price:null,desc:'',section:'Menu',addons:[]});
+  if(!state.menu.length) state.menu.push({name:'',price:null,desc:'',section:'Menu'});
   var pill=$('reviewPill'); if(pill) pill.textContent='Type in your menu below';
   renderEditor(); goStep('s-review');
 }
@@ -865,64 +486,22 @@ function skipToManual(){
    Step 3: Menu editor
    ============================================================ */
 function renderEditor(){
-  updateThemeUI();
   var box=$('editor'); box.innerHTML='';
   state.menu.forEach(function(it,i){
-    if(!it.addons) it.addons=[];
-    var wrap=document.createElement('div'); wrap.className='edititem';
-    var missing=it.name&&it.price==null;
     var row=document.createElement('div'); row.className='editrow';
     row.innerHTML='<input class="enm inp" type="text" value="'+esc(it.name)+'" oninput="editName('+i+',this.value)" placeholder="Item name" aria-label="Item name"/>'
-      +'<input class="epr inp'+(missing?' price-missing':'')+'" type="text" inputmode="decimal" value="'+(it.price==null?'':it.price)+'" oninput="editPrice('+i+',this.value)" placeholder="'+(missing?'Enter price *':'Price')+'" aria-label="Price"/>'
+      +'<input class="epr inp" type="text" inputmode="decimal" value="'+(it.price==null?'':it.price)+'" oninput="editPrice('+i+',this.value)" placeholder="Price" aria-label="Price"/>'
       +'<button class="iconbtn" onclick="removeItem('+i+')" aria-label="Remove">✕</button>';
-    wrap.appendChild(row);
-
-    var sub=document.createElement('div'); sub.className='addon-list';
-    it.addons.forEach(function(a,j){
-      var arow=document.createElement('div'); arow.className='addonrow';
-      arow.innerHTML='<input class="ean inp" type="text" value="'+esc(a.label)+'" oninput="editAddonLabel('+i+','+j+',this.value)" placeholder="Option (e.g. add cubed pancetta)" aria-label="Option"/>'
-        +'<input class="eap inp" type="text" inputmode="decimal" value="'+(a.price==null?'':a.price)+'" oninput="editAddonPrice('+i+','+j+',this.value)" placeholder="+ Price" aria-label="Option price"/>'
-        +'<button class="iconbtn" onclick="removeAddon('+i+','+j+')" aria-label="Remove option">✕</button>';
-      sub.appendChild(arow);
-    });
-    var addBtn=document.createElement('button');
-    addBtn.type='button'; addBtn.className='btn btn-g btn-sm addopt-btn';
-    addBtn.textContent='＋ Add option';
-    addBtn.onclick=function(){ addAddon(i); };
-    sub.appendChild(addBtn);
-    wrap.appendChild(sub);
-
-    box.appendChild(wrap);
+    box.appendChild(row);
   });
-  $('reviewErr').textContent='';
 }
-function editName(i,v){ state.menu[i].name=v; refreshPriceFlag(i); }
-function editPrice(i,v){ var n=parseFloat(v); state.menu[i].price=isNaN(n)?null:n; refreshPriceFlag(i); }
-function editAddonLabel(i,j,v){ state.menu[i].addons[j].label=v; }
-function editAddonPrice(i,j,v){ var n=parseFloat(v); state.menu[i].addons[j].price=isNaN(n)?null:n; }
-function removeAddon(i,j){ state.menu[i].addons.splice(j,1); renderEditor(); }
-function addAddon(i){
-  if(!state.menu[i].addons) state.menu[i].addons=[];
-  state.menu[i].addons.push({label:'',price:null});
-  renderEditor();
-  var wrap=$('editor').children[i];
-  var inputs=wrap.querySelectorAll('.ean');
-  var lastInput=inputs[inputs.length-1];
-  if(lastInput) lastInput.focus();
-}
-function refreshPriceFlag(i){
-  var row=$('editor').children[i]; if(!row) return;
-  var it=state.menu[i], pr=row.querySelector('.epr');
-  var missing=it.name&&it.price==null;
-  pr.classList.toggle('price-missing', !!missing);
-  pr.placeholder = missing ? 'Enter price *' : 'Price';
-}
+function editName(i,v){ state.menu[i].name=v; }
+function editPrice(i,v){ var n=parseFloat(v); state.menu[i].price=isNaN(n)?null:n; }
 function removeItem(i){ state.menu.splice(i,1); renderEditor(); }
 function addItem(){
-  state.menu.push({name:'',price:null,desc:'',section:'Menu',addons:[]});
+  state.menu.push({name:'',price:null,desc:'',section:'Menu'});
   renderEditor();
-  var wrap=$('editor').lastElementChild;
-  var last=wrap?wrap.querySelector('.enm'):null;
+  var last=$('editor').querySelector('.editrow:last-child .enm');
   if(last) last.focus();
 }
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
@@ -933,15 +512,8 @@ function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').r
 function buildPayload(){
   return {
     r:state.restaurant||'Our Menu', p:state.phone, c:state.currency,
-    th:state.theme.accent||'',
     m:state.menu.filter(function(it){return it.name;}).map(function(it){
-      var desc=it.desc||'';
-      var addons=(it.addons||[]).filter(function(a){return a.label;});
-      if(addons.length){
-        var extra=addons.map(function(a){ return '+ '+a.label+(a.price!=null?' ('+money(a.price)+')':''); }).join('  ·  ');
-        desc = desc ? (desc+'  ·  '+extra) : extra;
-      }
-      return {n:it.name, pr:(it.price==null?null:it.price), d:desc, s:it.section||'Menu'};
+      return {n:it.name, pr:(it.price==null?null:it.price), d:it.desc||'', s:it.section||'Menu'};
     })
   };
 }
@@ -954,18 +526,6 @@ var SITE = 'https://qr-code-ordering-r2x7.vercel.app';
 async function makeQR(){
   var clean=state.menu.filter(function(it){return it.name;});
   if(!clean.length){ alert('Add at least one menu item before generating a QR code.'); return; }
-
-  var missingIdx=-1;
-  for(var i=0;i<state.menu.length;i++){
-    if(state.menu[i].name && state.menu[i].price==null){ missingIdx=i; break; }
-  }
-  if(missingIdx!==-1){
-    $('reviewErr').innerHTML='<span class="err">Every item needs a price before you can generate a QR code — fill in the highlighted field'+(state.menu.filter(function(it){return it.name&&it.price==null;}).length>1?'s':'')+' below.</span>';
-    var row=$('editor').children[missingIdx];
-    if(row){ row.scrollIntoView({behavior:'smooth',block:'center'}); var f=row.querySelector('.epr'); if(f) f.focus(); }
-    return;
-  }
-  $('reviewErr').textContent='';
 
   var btn=$('makeQrBtn');
   if(btn){ btn.disabled=true; btn.textContent='Saving your menu…'; }

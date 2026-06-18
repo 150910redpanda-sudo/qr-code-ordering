@@ -11,8 +11,7 @@
   --muted:    #6A6660;
   --green:    #2A6B47;
   --green-dk: #1B4B32;
-  --green-rgb: 42,107,71;
-  --green-lt: rgba(var(--green-rgb),.1);
+  --green-lt: rgba(42,107,71,.1);
   --amber:    #D4893A;
   --red:      #B03A2E;
   --bd:       rgba(26,25,22,.1);
@@ -69,7 +68,7 @@ a { color: inherit; }
 .nav-dot {
   width: 11px; height: 11px; border-radius: 50%;
   background: var(--green);
-  box-shadow: 0 0 0 3px rgba(var(--green-rgb),.18);
+  box-shadow: 0 0 0 3px rgba(42,107,71,.18);
 }
 .nav-wordmark { font-family: 'Playfair Display', Georgia, serif; font-weight: 700; font-size: 20px; letter-spacing: -.01em; }
 .nav-wordmark .tap { color: var(--green); }
@@ -87,7 +86,7 @@ a { color: inherit; }
   white-space: nowrap; line-height: 1;
 }
 .btn-p  { background: var(--green); color: #fff; }
-.btn-p:hover  { background: var(--green-dk); transform: translateY(-1px); box-shadow: 0 6px 20px rgba(var(--green-rgb),.28); }
+.btn-p:hover  { background: var(--green-dk); transform: translateY(-1px); box-shadow: 0 6px 20px rgba(42,107,71,.28); }
 .btn-p:active { transform: none; }
 .btn-p:disabled { background: #a8b8b0; cursor: not-allowed; transform: none; box-shadow: none; }
 .btn-g  { background: transparent; color: var(--ink); border: 1.5px solid var(--bd-str); }
@@ -116,7 +115,7 @@ a { color: inherit; }
   border: 1.5px solid var(--bd-md); border-radius: var(--r-sm);
   padding: 12px 14px; outline: none; transition: .15s; appearance: none;
 }
-.inp:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(var(--green-rgb),.15); background: #fff; }
+.inp:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(42,107,71,.15); background: #fff; }
 textarea.inp { resize: vertical; min-height: 72px; }
 .row2 { display: flex; gap: 12px; }
 .row2>* { flex: 1; }
@@ -131,7 +130,7 @@ input[type=text],input[type=tel],select,textarea {
   padding: 12px 14px; outline: none; transition: .15s;
 }
 input[type=text]:focus,input[type=tel]:focus,select:focus,textarea:focus {
-  border-color: var(--green); box-shadow: 0 0 0 3px rgba(var(--green-rgb),.15); background: #fff;
+  border-color: var(--green); box-shadow: 0 0 0 3px rgba(42,107,71,.15); background: #fff;
 }
 
 /* ---- Spinner ---- */
@@ -140,7 +139,7 @@ input[type=text]:focus,input[type=tel]:focus,select:focus,textarea:focus {
   border: 2.5px solid rgba(255,255,255,.35); border-top-color: #fff;
   border-radius: 50%; animation: spin .7s linear infinite; flex-shrink: 0;
 }
-.spin-g { border-color: rgba(var(--green-rgb),.2); border-top-color: var(--green); }
+.spin-g { border-color: rgba(42,107,71,.2); border-top-color: var(--green); }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion:reduce) { .spin { animation: none; } }
 
@@ -222,7 +221,7 @@ input[type=text]:focus,input[type=tel]:focus,select:focus,textarea:focus {
 
 /* ---- Cart bar ---- */
 .cartbar { position: sticky; bottom: 14px; z-index: 10; margin-top: 18px; }
-.cartbar .btn-p { box-shadow: 0 8px 28px rgba(var(--green-rgb),.28); width: 100%; }
+.cartbar .btn-p { box-shadow: 0 8px 28px rgba(42,107,71,.28); width: 100%; }
 .cartbar .n { background: rgba(255,255,255,.22); border-radius: 999px; padding: 2px 10px; font-size: 13px; margin-left: 4px; }
 
 /* ---- Camera ---- */

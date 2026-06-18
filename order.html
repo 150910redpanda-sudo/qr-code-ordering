@@ -214,21 +214,7 @@ function loadMenu(p){
   $('mName').textContent=state.restaurant;
   var nr=$('nav-rname'); if(nr) nr.textContent='· '+state.restaurant;
   document.title=state.restaurant+' — Order food';
-  applyBrandTheme(p.th);
   renderMenuList(); updateCartBar();
-}
-
-/* Tint this ordering page with the restaurant's own brand colour
-   (picked up from their menu photo when they set up their QR code),
-   instead of every restaurant looking identical. */
-function applyBrandTheme(hex){
-  if(!hex || !/^#[0-9a-fA-F]{6}$/.test(hex)) return;
-  var n=parseInt(hex.slice(1),16), r=(n>>16)&255, g=(n>>8)&255, b=n&255;
-  var dark=[r,g,b].map(function(c){ return Math.round(c*0.72); });
-  var root=document.documentElement.style;
-  root.setProperty('--green', hex);
-  root.setProperty('--green-dk', 'rgb('+dark[0]+','+dark[1]+','+dark[2]+')');
-  root.setProperty('--green-rgb', r+','+g+','+b);
 }
 
 function renderMenuList(){
