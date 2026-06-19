@@ -265,6 +265,7 @@ function loadMenu(p){
   state.currency   = p.c || '£';
   var sx = p.sx || {};
   state.sectionNotes = sx;
+  state.menuNote = p.mn || '';
   state.menu       = (p.m||[]).map(function(it){
     var secName = it.s||'Menu';
     var shared  = (sx[secName]&&sx[secName].o)||[];
@@ -295,6 +296,10 @@ function renderMenuList(){
     secs[sec].forEach(function(i){ card.appendChild(buildItemBlock(i)); });
     host.appendChild(card);
   });
+  if(state.menuNote){
+    var fn=document.createElement('p'); fn.className='menu-footnote'; fn.textContent=state.menuNote;
+    host.appendChild(fn);
+  }
 }
 
 function buildItemBlock(i){

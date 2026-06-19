@@ -22,7 +22,10 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-6',
-        max_tokens: 2000,
+        /* large multi-section menus (50+ items, each with name/price/desc/tags/options)
+           need far more than a couple thousand tokens of JSON output — too low a cap
+           truncates the response mid-item and breaks JSON.parse on the client */
+        max_tokens: 8192,
         messages: [{
           role: 'user',
           content: [
