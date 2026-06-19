@@ -392,6 +392,9 @@ async function readMenu(){
   $('readStat').textContent='This usually takes a few seconds.';
 
   var prompt="You are a menu digitiser. Read this photo of a restaurant menu and extract EVERY food and drink item — scan the whole image methodically, section by section, and do not stop early or skip anything. "
+    +"IMPORTANT — reading order: many menus are laid out in two or more side-by-side columns (e.g. one section like 'Antipasti' in the left column and a different section like 'Primi' in the right column, sometimes starting at different heights). "
+    +"Identify the columns first, then read each column fully top-to-bottom, left column before right column — never jump between columns line-by-line, and never read a column bottom-to-top. "
+    +"Return items in the exact order they appear on the menu once read this way, grouped by the section they actually sit under (don't merge two visually-adjacent but different sections into one, and don't split one section's items across two columns into two different section names). "
     +"Respond with ONLY valid JSON and nothing else — no markdown, no commentary. Use exactly this schema:\n"
     +'{"items":[{"name":"string","price":number_or_null,"desc":"string","section":"string","tags":["string"],"options":[{"name":"string","price":number_or_null}]}],'
     +'"sections":[{"name":"string","note":"string","options":[{"name":"string","price":number_or_null}]}]}\n'
@@ -510,7 +513,7 @@ async function readMenuLocal(){
       }
     });
     prog('Done — reviewing results', 100);
-    var text=result.data.text;
+    var text=linesInReadingOrder(result.data).join('\n');
     if(!text||text.trim().length<5) throw new Error('no text');
     var parsed=parseOcrToMenu(text);
     if(!parsed.items.length) throw new Error('no items');
@@ -530,12 +533,59 @@ async function readMenuLocal(){
   }
 }
 
+/* ============================================================
+   Reorder Tesseract's raw lines into a sane reading order.
+   Plain OCR text reads in raster (top-to-bottom-of-page) order, which
+   scrambles multi-column menus — e.g. it can read partway down a left
+   column, jump into the right column, then back. Tesseract still gives
+   us each line's bounding box, so detect column boundaries from the
+   horizontal gaps between lines and read column-by-column, top-to-
+   bottom, left column before right — generic for any number of columns,
+   and harmless (falls back to plain top-to-bottom) for single-column menus.
+   ============================================================ */
+function linesInReadingOrder(data){
+  var raw=[];
+  (data.lines||[]).forEach(function(l){
+    if(l&&l.text&&l.text.trim()&&l.bbox) raw.push({text:l.text.replace(/\s+$/,''), bbox:l.bbox});
+  });
+  if(raw.length<2) return (data.text||'').split('\n');
+
+  var x0s=raw.map(function(l){return l.bbox.x0;}).sort(function(a,b){return a-b;});
+  var maxX=Math.max.apply(null, raw.map(function(l){return l.bbox.x1;}));
+  var totalWidth=maxX-x0s[0];
+  var gapThreshold=Math.max(totalWidth*0.12, 60);
+
+  var boundaries=[];
+  for(var k=1;k<x0s.length;k++){
+    var gap=x0s[k]-x0s[k-1];
+    if(gap>gapThreshold) boundaries.push((x0s[k]+x0s[k-1])/2);
+  }
+  boundaries=boundaries.filter(function(b,idx){ return idx===0||b-boundaries[idx-1]>totalWidth*0.05; });
+
+  if(!boundaries.length){
+    return raw.slice().sort(function(a,b){return a.bbox.y0-b.bbox.y0;}).map(function(l){return l.text;});
+  }
+
+  var cols=[]; for(var c=0;c<=boundaries.length;c++) cols.push([]);
+  raw.forEach(function(l){
+    var idx=0; while(idx<boundaries.length&&l.bbox.x0>boundaries[idx]) idx++;
+    cols[idx].push(l);
+  });
+
+  var out=[];
+  cols.forEach(function(col){
+    col.sort(function(a,b){return a.bbox.y0-b.bbox.y0;});
+    col.forEach(function(l){ out.push(l.text); });
+  });
+  return out;
+}
+
 function parseOcrToMenu(raw){
   var text=raw.replace(/\.{3,}/g,' ').replace(/_{3,}/g,' ').replace(/\|/g,'I')
               .replace(/([£$€])O(\d)/g,'$10$2').replace(/([£$€])\s*l(\d)/g,'$11$2');
   var lines=text.split('\n').map(function(l){return l.trim();}).filter(function(l){return l.length>1;});
   var PRICE_RE=/(?:[£$€¥₹])\s*(\d{1,3}(?:[.,]\d{1,2})?)|(\d{1,3}(?:[.,]\d{2}))\s*(?:[£$€])/;
-  var SEC_RE=/^(starters?|mains?|desserts?|drinks?|sides?|breakfast|lunch|dinner|snacks?|soups?|salads?|pizza|pasta|burgers?|specials?|cocktails?|wines?|beers?|soft\s+drinks?|hot\s+drinks?|appetiz|seafood|vegetarian|vegan|kids?|children|sharing|extras?|sauces?)/i;
+  var SEC_RE=/^(starters?|mains?|desserts?|drinks?|sides?|breakfast|lunch|dinner|snacks?|soups?|salads?|pizza|pasta|burgers?|specials?|cocktails?|wines?|beers?|soft\s+drinks?|hot\s+drinks?|appetiz|seafood|vegetarian|vegan|kids?|children|sharing|extras?|sauces?|antipasti|primi(\s+piatti)?|secondi(\s+piatti)?|contorni|dolci|risotti|insalate|calzoni|bevande|formaggi|entr[ée]es?|plats?|fromages?|boissons?|entrantes|platos?|postres|bebidas|ensaladas)/i;
   /* lines describing an add-on / swap / modifier for the dish above them, not a dish of their own */
   var MOD_RE=/^[+]|^make\s+it\b|^add(?:ing)?\b|^swap\b|^upgrade\b|available\b/i;
   /* phrasing that (in most restaurants' menus) applies to a whole section rather than one dish —
@@ -579,8 +629,14 @@ function parseOcrToMenu(raw){
       }
       i++; continue;
     }
-    var np=xprice(lines[i+1]||'');
-    if(np!==null&&!isSec(line)&&!isMod(line)&&line.length>1&&line.length<80){ items.push({name:line,price:np,desc:'',section:sec,tags:[],options:[]}); i+=2; continue; }
+    /* only pair this line's name with the NEXT line's price when that next line is
+       essentially just a price on its own (e.g. OCR split "Name" / "£5.50" across two
+       lines) — if it's a self-contained "Name  £5.50" line, leave it for the next pass
+       so we don't swallow a section header followed by an unrelated priced item */
+    var nextLine=lines[i+1]||'', np=xprice(nextLine);
+    if(np!==null&&strip(nextLine).length<=2&&!isSec(line)&&!isMod(line)&&line.length>1&&line.length<80){
+      items.push({name:line,price:np,desc:'',section:sec,tags:[],options:[]}); i+=2; continue;
+    }
     i++;
   }
   return {items:items, sectionMeta:sectionMeta};
