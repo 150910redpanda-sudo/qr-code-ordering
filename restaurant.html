@@ -62,7 +62,7 @@ body { padding-top: var(--nav); padding-bottom: 80px; }
 
 .item-edit { border: 1px solid var(--bd); border-radius: var(--r-sm); padding: 12px 12px 10px; margin-bottom: 10px; background: var(--surface); }
 .item-edit .editrow { border-bottom: 0; padding: 0 0 7px; }
-.desc-inp { width: 100%; margin-bottom: 7px; }
+.desc-inp { width: 100%; margin-bottom: 7px; min-height: 38px; height: 38px; line-height: 1.4; padding-top: 8px; resize: vertical; }
 .tag-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
 .tag-chip { display: flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; color: var(--green); background: var(--green-lt); border-radius: 999px; padding: 4px 6px 4px 10px; }
 .tag-chip button { border: 0; background: none; color: var(--green); cursor: pointer; font-size: 12px; line-height: 1; padding: 0; }
@@ -396,7 +396,8 @@ async function readMenu(){
     +'{"items":[{"name":"string","price":number_or_null,"desc":"string","section":"string","tags":["string"],"options":[{"name":"string","price":number_or_null}]}],'
     +'"sections":[{"name":"string","note":"string","options":[{"name":"string","price":number_or_null}]}]}\n'
     +"Rules: price is a plain number with no currency symbol; null if not shown. "
-    +"desc is a short description of the dish itself (max ~12 words) or empty string. "
+    +"desc is the FULL description of the dish exactly as printed — do not shorten, summarise or drop any part of it, however long it is. "
+    +"If the menu prints it in ALL CAPS, rewrite it in normal sentence case for readability, but keep every word and detail. Empty string only if no description is printed. "
     +"section is the heading the item sits under (e.g. Starters, Mains, Drinks); if none use \"Menu\". "
     +"tags are short dietary/info labels printed right on that dish, like 'V', 'VG', 'GF', 'Spicy', 'Sharing' — omit if none shown. "
     +"items[].options is ONLY for add-ons, swaps or modifiers tied to ONE specific dish — e.g. 'Make it Matriciana by adding chilli £2', a choice of two fillings for one dish, or a price to upgrade that one dish to a main. "
@@ -568,9 +569,13 @@ function parseOcrToMenu(raw){
     if(p!==null){
       var nm=strip(line);
       if(nm.length>1){
-        var desc=''; var nx=lines[i+1]||'';
-        if(nx&&!isSec(nx)&&!isMod(nx)&&xprice(nx)===null&&nx.length>3&&nx.length<120){ desc=nx; i++; }
-        items.push({name:nm,price:p,desc:desc,section:sec,tags:[],options:[]});
+        /* descriptions often wrap across several OCR lines — keep pulling lines in
+           until we hit the next price, section heading or modifier line */
+        var descParts=[]; var nx=lines[i+1]||'';
+        while(nx&&!isSec(nx)&&!isMod(nx)&&xprice(nx)===null&&nx.length>2&&descParts.length<4){
+          descParts.push(nx); i++; nx=lines[i+1]||'';
+        }
+        items.push({name:nm,price:p,desc:descParts.join(' '),section:sec,tags:[],options:[]});
       }
       i++; continue;
     }
@@ -671,8 +676,8 @@ function buildItemEditBlock(it,i){
     +'<button class="iconbtn" onclick="removeItem('+i+')" aria-label="Remove">✕</button>';
   wrap.appendChild(row);
 
-  var desc=document.createElement('input');
-  desc.className='inp desc-inp'; desc.type='text'; desc.placeholder='Description (optional)';
+  var desc=document.createElement('textarea');
+  desc.className='inp desc-inp'; desc.placeholder='Description (optional)';
   desc.setAttribute('aria-label','Description'); desc.value=it.desc||'';
   desc.oninput=function(){ editDesc(i,this.value); };
   wrap.appendChild(desc);
