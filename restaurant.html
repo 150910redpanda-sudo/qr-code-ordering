@@ -922,6 +922,14 @@ function parseOcrToMenu(rawLines){
     var re=PRICE_RE.test(t)?PRICE_RE:BARE_PRICE_RE;
     return t.replace(re,'').replace(/\s+/g,' ').replace(/^[\s\-–—·•.]+|[\s\-–—·•.]+$/g,'').trim();
   }
+  /* Per-dish serving-style descriptors ("SHARING STARTER", "AS A MAIN") are commonly
+     printed bold/emphasized on real menus — visually indistinguishable from a genuine
+     header by size alone. Narrowing the SEC_RE keyword wasn't enough on its own: the
+     ALL-CAPS shape-only fallback below independently re-classified "SHARING STARTER"
+     as a header whenever it happened to register as visually "big" on the actual photo
+     (confirmed — it's never a header, no matter how it's emphasized), so this exclusion
+     has to run before EITHER detection path, not just block the keyword one. */
+  var SEC_EXCLUDE_RE=/^as\s+a?\s*(main|starter|side|sharing|whole)\b|^sharing\s+(starter|plate|board)\b|^(to\s+share|for\s+sharing)\b|^serves?\s+\d/i;
   /* A known keyword is trusted regardless of size. Otherwise (the all-caps/no-digit
      shape alone) only counts as a header when the line is also visually bigger than
      typical body text — or when there's no size signal at all (Tesseract gave no
@@ -930,6 +938,7 @@ function parseOcrToMenu(rawLines){
   function isSec(l){
     var c=l.text.replace(/[-_=*•·]/g,'').trim();
     if(c.length<2||c.length>55||xprice(c)!==null) return false;
+    if(SEC_EXCLUDE_RE.test(c)) return false;
     if(SEC_RE.test(c)) return true;
     /* shape-only fallback (no keyword match) is the riskier path — a long ALL-CAPS
        line is far more likely to be a misread description fragment than a genuine
