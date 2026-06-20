@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+1<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
@@ -74,6 +74,7 @@ body { padding-top: var(--nav); padding-bottom: 80px; }
 .opt-row .oname, .opt-row .sec-oname { flex: 1; }
 .opt-row .oprice, .opt-row .sec-oprice { width: 78px; }
 .opt-add-btn { margin-top: 4px; }
+.epr-missing { border-color: var(--red) !important; background: rgba(176,58,46,.06); }
 </style>
 </head>
 <body>
@@ -150,13 +151,9 @@ body { padding-top: var(--nav); padding-bottom: 80px; }
     <div class="card mt">
       <label class="fld">How would you like to read the menu?</label>
       <div class="method-group">
-        <button id="readBtn" class="method-btn primary-method" disabled onclick="readMenu()">
-          <span class="method-icon">✨</span>
-          <div class="method-text"><strong>Read with AI (recommended)</strong><span>Uses Claude AI — fastest, most accurate. Requires internet.</span></div>
-        </button>
-        <button id="localBtn" class="method-btn" disabled onclick="readMenuLocal()">
+        <button id="localBtn" class="method-btn primary-method" disabled onclick="readMenuLocal()">
           <span class="method-icon">📍</span>
-          <div class="method-text"><strong>Read on this device</strong><span>Uses Tesseract OCR — works offline. Downloads ~5 MB once.</span></div>
+          <div class="method-text"><strong>Read this photo (recommended)</strong><span>Reads the menu right here on your device — works offline. Downloads ~5 MB once.</span></div>
         </button>
         <button id="manualBtn" class="method-btn" disabled onclick="skipToManual()">
           <span class="method-icon">✏️</span>
@@ -330,7 +327,6 @@ function nextToUpload(){
    ============================================================ */
 function syncUpload(){
   var has = !!state.imgB64;
-  $('readBtn').disabled  = !has;
   $('localBtn').disabled = !has;
   $('manualBtn').disabled = false; // manual never needs a photo
 }
@@ -374,7 +370,7 @@ function onFile(e){
       var c=$('work'); c.width=w; c.height=h;
       var ctx=c.getContext('2d');
       /* browsers default to low-quality interpolation when shrinking — that blurs
-         fine menu text right before OCR/AI has to read it, so force the good algorithm */
+         fine menu text right before OCR has to read it, so force the good algorithm */
       ctx.imageSmoothingEnabled=true; ctx.imageSmoothingQuality='high';
       ctx.drawImage(img,0,0,w,h);
 
@@ -390,69 +386,6 @@ function onFile(e){
   reader.readAsDataURL(f);
 }
 
-/* ============================================================
-   Step 2 → 3: AI read (Claude via /api/read-menu)
-   ============================================================ */
-async function readMenu(){
-  var btn=$('readBtn');
-  btn.disabled=true;
-  btn.querySelector('strong').textContent='Reading your menu…';
-  $('readStat').textContent='This usually takes a few seconds.';
-
-  var prompt="You are a menu digitiser. Read this photo of a restaurant menu and extract EVERY food and drink item — scan the whole image methodically, and do not stop early or skip anything. "
-    +"Real menus often run to 40-60+ items across many sections (starters, mains, pizzas, grills, salads, sides, desserts, drinks...) — treat that as completely normal and keep going through the entire image, not just the first section or two. "
-    +"IMPORTANT — reading order: many menus split the page into a left half and a right half, each containing several sections stacked top to bottom; within a section, the item list is sometimes further laid out in two or more sub-columns. Tell these apart: "
-    +"(1) Two areas are DIFFERENT sections (e.g. 'Starters' at the top of the left half and 'Mains' below it, or 'Grill' on the right half while 'Starters' is on the left) — keep each as its own section, and read one full half (every section in it, top to bottom) before moving to the other half. "
-    +"(2) One section's own item list is simply split into two or more sub-columns side by side to save space (e.g. a 'Pizzas' heading with 8 pizzas printed as two columns of 4 underneath it, or 'Salads' and 'Sides' printed as two short lists side by side near the bottom of a page — note that case can ALSO be two different sections placed side by side, so check the headings) — for a genuine same-section sub-column split, read the left sub-column fully top-to-bottom, then the right sub-column, without inventing a second section name. "
-    +"In general: identify the regions first (page halves, then columns within each), then read each one fully top-to-bottom before moving to the next (left before right, top region before lower region) — never jump between columns or halves line-by-line, and never read one bottom-to-top. "
-    +"Return items in the order they appear on the menu once read this way. "
-    +"Respond with ONLY valid JSON and nothing else — no markdown, no commentary. Use exactly this schema:\n"
-    +'{"items":[{"name":"string","price":number_or_null,"desc":"string","section":"string","tags":["string"],"options":[{"name":"string","price":number_or_null}]}],'
-    +'"sections":[{"name":"string","note":"string","options":[{"name":"string","price":number_or_null}]}],'
-    +'"menuNote":"string"}\n'
-    +"Rules: price is a plain number with no currency symbol; null if not shown. "
-    +"desc is the FULL description of the dish exactly as printed — do not shorten, summarise or drop any part of it, however long it is. "
-    +"If the menu prints it in ALL CAPS, rewrite it in normal sentence case for readability, but keep every word and detail. Empty string only if no description is printed. "
-    +"section is the heading the item sits under (e.g. Starters, Mains, Drinks); if none use \"Menu\". "
-    +"tags are short dietary/info labels printed right on that dish — including small letter badges/circles like 'V', 'VG', 'GF' as well as words like 'Spicy', 'Sharing' — read every one shown next to that item, omit the array entirely if none shown. "
-    +"items[].options is ONLY for add-ons, swaps or modifiers tied to ONE specific dish — e.g. 'Make it Matriciana by adding chilli £2', a choice of two fillings for one dish, or a price to upgrade that one dish to a main. "
-    +"sections is for rules that apply to an ENTIRE section rather than one dish — e.g. a line printed once under a heading like 'Gluten free base +£2' or 'Extra toppings £1.50 each' that applies to every pizza, or 'Vegan cheese available on request' that applies to a whole group. "
-    +"Put the priced, selectable ones (gluten free base, extra topping, etc.) in that section's options array; put plain non-priced notes (timing, 'ask your server', 'vegan cheese available') in that section's note string instead. Only include a section in the sections array if it actually has a note or shared options — most sections won't. "
-    +"menuNote is for page-wide text that applies to the WHOLE menu, not one section or dish — e.g. a legend explaining abbreviations ('V = Vegetarian, GF = Gluten Free, VG = Vegan') printed once at the bottom of the page, or a general allergy disclaimer ('Food Allergies & Intolerances — please speak to our staff'). Combine multiple such page-wide lines into one string. Empty string if there's no such page-wide text. "
-    +"A real top-level item is a distinct named dish or drink with its own base price — never list an add-on, swap, section-wide rule, or the page-wide legend/disclaimer as its own item. "
-    +"Keep names exactly as written. Do not invent items, but do not omit any either.";
-
-  try{
-    var res=await fetch('/api/read-menu',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({image:state.imgB64, imageType:state.imgType, prompt:prompt})
-    });
-    var data=await res.json();
-    if(!res.ok) throw new Error(data.error||'API error');
-    var text=(data.content||[]).filter(function(b){return b.type==='text';}).map(function(b){return b.text;}).join('');
-    var parsed, items, truncated=false;
-    try{
-      parsed=JSON.parse(extractJSON(text));
-      items=(parsed.items||[]).filter(function(it){return it&&it.name;});
-    }catch(parseErr){
-      items=salvageItems(text);
-      parsed={};
-      truncated=true;
-    }
-    if(!items.length) throw new Error('no items');
-    applyParsedMenu(items, parsed.sections, parsed.menuNote);
-    var pill=$('reviewPill');
-    if(pill) pill.textContent=truncated?'Read most of it — the rest got cut off, check for missing items':'Looks good — fix anything that\'s off';
-    renderEditor(); goStep('s-review');
-  }catch(err){
-    $('readStat').innerHTML='<span class="err">Couldn\'t read that one. Try a clearer, well-lit photo — or use Local OCR or manual entry.</span>';
-  }finally{
-    btn.querySelector('strong').textContent='Read with AI (recommended)';
-    syncUpload();
-  }
-}
-
 function toOptions(raw){
   return (Array.isArray(raw)?raw:[]).filter(function(o){return o&&o.name;}).map(function(o){
     return {name:String(o.name).trim(), price:(o.price==null?null:Number(o.price))};
@@ -462,7 +395,7 @@ function toOptions(raw){
 /* ============================================================
    Shared menu model: items reference a sectionId; sections carry
    the display name plus a note and shared add-ons for every item
-   under them. Used by every read path (AI / local OCR / manual).
+   under them. Used by every read path (local OCR / manual entry).
    ============================================================ */
 function nextSectionId(){ state._secSeq=(state._secSeq||0)+1; return 'sec'+state._secSeq; }
 
@@ -500,47 +433,12 @@ function applyParsedMenu(rawItems, rawSections, menuNote){
   });
 }
 
-function extractJSON(t){
-  if(!t) throw new Error('empty');
-  t=t.replace(/```json/gi,'').replace(/```/g,'').trim();
-  var a=t.indexOf('{'), b=t.lastIndexOf('}');
-  if(a===-1||b===-1) throw new Error('no json');
-  return t.slice(a,b+1);
-}
-
-/* If the model's response got cut off mid-item (a huge menu hitting the output
-   cap, a flaky connection, etc.), the JSON won't parse as a whole — but the
-   "items" array up to that point is still made of complete, individually-valid
-   objects. Scan for those by brace depth and salvage as many as we can rather
-   than failing the whole read over a handful of items near the very end. */
-function salvageItems(rawText){
-  var idx=rawText.indexOf('"items"');
-  if(idx===-1) return [];
-  var arrStart=rawText.indexOf('[', idx);
-  if(arrStart===-1) return [];
-  var depth=0, objStart=-1, items=[];
-  for(var i=arrStart;i<rawText.length;i++){
-    var c=rawText[i];
-    if(c==='{'){ if(depth===0) objStart=i; depth++; }
-    else if(c==='}'){
-      depth--;
-      if(depth===0&&objStart!==-1){
-        try{ items.push(JSON.parse(rawText.slice(objStart,i+1))); }catch(e){}
-        objStart=-1;
-      }
-    }else if(c===']'&&depth===0){
-      break;
-    }
-  }
-  return items.filter(function(it){return it&&it.name;});
-}
-
 /* ============================================================
    Step 2 → 3: Local Tesseract OCR
    ============================================================ */
 async function readMenuLocal(){
   var btn=$('localBtn');
-  btn.disabled=true; $('readBtn').disabled=true;
+  btn.disabled=true;
   btn.querySelector('strong').textContent='Starting OCR engine…';
   $('ocrProg').classList.remove('hidden');
   $('readStat').textContent='';
@@ -574,7 +472,7 @@ async function readMenuLocal(){
   }catch(err){
     $('readStat').innerHTML='<span class="err">Couldn\'t extract items from that photo. Try a flatter, well-lit shot — or use manual entry.</span>';
   }finally{
-    btn.querySelector('strong').textContent='Read on this device';
+    btn.querySelector('strong').textContent='Read this photo (recommended)';
     syncUpload();
     $('ocrProg').classList.add('hidden');
     $('ocrFill').style.width='0%';
@@ -591,16 +489,18 @@ async function readMenuLocal(){
    bottom, left column before right — generic for any number of columns,
    and harmless (falls back to plain top-to-bottom) for single-column menus.
    ============================================================ */
-function linesInReadingOrder(data){
-  var raw=[];
-  (data.lines||[]).forEach(function(l){
-    if(l&&l.text&&l.text.trim()&&l.bbox) raw.push({text:l.text.replace(/\s+$/,''), bbox:l.bbox});
-  });
-  if(raw.length<2) return (data.text||'').split('\n');
-
-  var x0s=raw.map(function(l){return l.bbox.x0;}).sort(function(a,b){return a-b;});
-  var maxX=Math.max.apply(null, raw.map(function(l){return l.bbox.x1;}));
+/* Order a region's lines by detecting column gaps along x, then recurse into each
+   resulting column to look for further side-by-side sub-columns (e.g. a page split
+   into a left/right half, where one of those halves has a section whose own item
+   list is laid out as two short lists side by side). Depth-capped and only recurses
+   into regions with enough lines to plausibly contain real sub-structure, so normal
+   single-column text (where lines vary a bit in left-indent) isn't over-split. */
+function orderRegion(items, depth){
+  if(items.length<2) return items.slice();
+  var x0s=items.map(function(l){return l.bbox.x0;}).sort(function(a,b){return a-b;});
+  var maxX=Math.max.apply(null, items.map(function(l){return l.bbox.x1;}));
   var totalWidth=maxX-x0s[0];
+  if(totalWidth<=0) return items.slice().sort(function(a,b){return a.bbox.y0-b.bbox.y0;});
   var gapThreshold=Math.max(totalWidth*0.12, 60);
 
   var boundaries=[];
@@ -611,21 +511,30 @@ function linesInReadingOrder(data){
   boundaries=boundaries.filter(function(b,idx){ return idx===0||b-boundaries[idx-1]>totalWidth*0.05; });
 
   if(!boundaries.length){
-    return raw.slice().sort(function(a,b){return a.bbox.y0-b.bbox.y0;}).map(function(l){return l.text;});
+    return items.slice().sort(function(a,b){return a.bbox.y0-b.bbox.y0;});
   }
 
   var cols=[]; for(var c=0;c<=boundaries.length;c++) cols.push([]);
-  raw.forEach(function(l){
+  items.forEach(function(l){
     var idx=0; while(idx<boundaries.length&&l.bbox.x0>boundaries[idx]) idx++;
     cols[idx].push(l);
   });
 
   var out=[];
   cols.forEach(function(col){
-    col.sort(function(a,b){return a.bbox.y0-b.bbox.y0;});
-    col.forEach(function(l){ out.push(l.text); });
+    var ordered=(depth<3&&col.length>=6) ? orderRegion(col,depth+1) : col.slice().sort(function(a,b){return a.bbox.y0-b.bbox.y0;});
+    out=out.concat(ordered);
   });
   return out;
+}
+
+function linesInReadingOrder(data){
+  var raw=[];
+  (data.lines||[]).forEach(function(l){
+    if(l&&l.text&&l.text.trim()&&l.bbox) raw.push({text:l.text.replace(/\s+$/,''), bbox:l.bbox});
+  });
+  if(raw.length<2) return (data.text||'').split('\n');
+  return orderRegion(raw,0).map(function(l){return l.text;});
 }
 
 function parseOcrToMenu(raw){
@@ -637,7 +546,7 @@ function parseOcrToMenu(raw){
      trust a bare "12.50"-style number only when it's right-aligned at the end of the line,
      which is how virtually every menu lays prices out, to avoid matching random digits */
   var BARE_PRICE_RE=/(\d{1,3}[.,]\d{2})\s*$/;
-  var SEC_RE=/^(starters?|mains?|desserts?|drinks?|sides?|breakfast|lunch|dinner|snacks?|soups?|salads?|pizza|pasta|burgers?|specials?|cocktails?|wines?|beers?|soft\s+drinks?|hot\s+drinks?|appetiz|seafood|vegetarian|vegan|kids?|children|sharing|extras?|sauces?|antipasti|primi(\s+piatti)?|secondi(\s+piatti)?|contorni|dolci|risotti|insalate|calzoni|bevande|formaggi|entr[ée]es?|plats?|fromages?|boissons?|entrantes|platos?|postres|bebidas|ensaladas)/i;
+  var SEC_RE=/^(starters?|mains?|desserts?|drinks?|sides?|breakfast|lunch|dinner|snacks?|soups?|salads?|pizz[ae]s?|pasta|burgers?|specials?|cocktails?|wines?|beers?|soft\s+drinks?|hot\s+drinks?|appetiz|seafood|vegetarian|vegan|kids?|children|sharing|extras?|sauces?|antipasti|primi(\s+piatti)?|secondi(\s+piatti)?|contorni|dolci|risotti|insalate|calzoni|bevande|formaggi|entr[ée]es?|plats?|fromages?|boissons?|entrantes|platos?|postres|bebidas|ensaladas)/i;
   /* lines describing an add-on / swap / modifier for the dish above them, not a dish of their own */
   var MOD_RE=/^[+]|^make\s+it\b|^add(?:ing)?\b|^swap\b|^upgrade\b|available\b/i;
   /* phrasing that (in most restaurants' menus) applies to a whole section rather than one dish —
@@ -659,6 +568,18 @@ function parseOcrToMenu(raw){
   }
   function isSec(l){ var c=l.replace(/[-_=*•·]/g,'').trim(); if(c.length<2||c.length>55||xprice(c)!==null) return false; if(SEC_RE.test(c)) return true; if(c===c.toUpperCase()&&/[A-Z]/.test(c)&&!/\d/.test(c)) return true; return false; }
   function isMod(l){ return MOD_RE.test(l.replace(/^[\s\-–—·•.]+/,'')); }
+  /* dietary/info badges that OCR sometimes picks up as literal trailing text next to a
+     dish name (a 'V' or 'GF' circle printed close enough to the text to be read as part
+     of it) — strip them off the name and keep them as tags instead */
+  var TAG_TOKEN_RE=/[\s,]*[\(\[]?\b(VG|GF|DF|VE|V)\b[\)\]]?\s*$/i;
+  function extractTags(name){
+    var tags=[], n=name, m;
+    while(tags.length<4&&(m=n.match(TAG_TOKEN_RE))){
+      tags.unshift(m[1].toUpperCase());
+      n=n.slice(0,m.index).trim();
+    }
+    return {name:n, tags:tags};
+  }
   var items=[],sectionMeta={},menuNoteParts=[],sec='Menu',i=0;
   function secMeta(name){ return sectionMeta[name]=sectionMeta[name]||{note:'',options:[]}; }
   while(i<lines.length){
@@ -687,10 +608,11 @@ function parseOcrToMenu(raw){
         /* descriptions often wrap across several OCR lines — keep pulling lines in
            until we hit the next price, section heading or modifier line */
         var descParts=[]; var nx=lines[i+1]||'';
-        while(nx&&!isSec(nx)&&!isMod(nx)&&xprice(nx)===null&&nx.length>2&&descParts.length<4){
+        while(nx&&!isSec(nx)&&!isMod(nx)&&!MENU_NOTE_RE.test(nx)&&xprice(nx)===null&&nx.length>2&&descParts.length<4){
           descParts.push(nx); i++; nx=lines[i+1]||'';
         }
-        items.push({name:nm,price:p,desc:descParts.join(' '),section:sec,tags:[],options:[]});
+        var tg=extractTags(nm);
+        items.push({name:tg.name,price:p,desc:descParts.join(' '),section:sec,tags:tg.tags,options:[]});
       }
       i++; continue;
     }
@@ -700,7 +622,26 @@ function parseOcrToMenu(raw){
        so we don't swallow a section header followed by an unrelated priced item */
     var nextLine=lines[i+1]||'', np=xprice(nextLine);
     if(np!==null&&strip(nextLine).length<=2&&!isSec(line)&&!isMod(line)&&line.length>1&&line.length<80){
-      items.push({name:line,price:np,desc:'',section:sec,tags:[],options:[]}); i+=2; continue;
+      var tg2=extractTags(line);
+      items.push({name:tg2.name,price:np,desc:'',section:sec,tags:tg2.tags,options:[]}); i+=2; continue;
+    }
+    /* Some menus never print a price at all (e.g. "ask your server" / chalkboard-only
+       pricing) — without that anchor the only safe signal left is the menu's own name/
+       description styling: a normal mixed-case dish name line immediately followed by
+       a long ALL-CAPS description line. Conservative on purpose (real length + caps
+       requirements) so it doesn't start treating random text as dishes. */
+    if(!isSec(line)&&!isMod(line)&&line.length>1&&line.length<60&&line!==line.toUpperCase()){
+      var nx2=lines[i+1]||'';
+      var nx2Caps=nx2.replace(/[-_=*•·]/g,'').trim();
+      if(nx2Caps.length>15&&nx2Caps===nx2Caps.toUpperCase()&&/[A-Z]/.test(nx2Caps)&&!isSec(nx2)&&!isMod(nx2)&&xprice(nx2)===null){
+        var tg3=extractTags(line);
+        var descParts2=[nx2]; var k=i+2; var nx3=lines[k]||'';
+        while(nx3&&!isSec(nx3)&&!isMod(nx3)&&!MENU_NOTE_RE.test(nx3)&&xprice(nx3)===null&&nx3.length>2&&nx3===nx3.toUpperCase()&&descParts2.length<4){
+          descParts2.push(nx3); k++; nx3=lines[k]||'';
+        }
+        items.push({name:tg3.name,price:null,desc:descParts2.join(' '),section:sec,tags:tg3.tags,options:[]});
+        i=k; continue;
+      }
     }
     i++;
   }
@@ -805,7 +746,7 @@ function buildItemEditBlock(it,i){
 
   var row=document.createElement('div'); row.className='editrow';
   row.innerHTML='<input class="enm inp" type="text" value="'+esc(it.name)+'" oninput="editName('+i+',this.value)" placeholder="Item name" aria-label="Item name"/>'
-    +'<input class="epr inp" type="text" inputmode="decimal" value="'+(it.price==null?'':it.price)+'" oninput="editPrice('+i+',this.value)" placeholder="Price" aria-label="Price"/>'
+    +'<input class="epr inp'+(it.price==null?' epr-missing':'')+'" type="text" inputmode="decimal" value="'+(it.price==null?'':it.price)+'" oninput="editPrice('+i+',this.value)" placeholder="Price" aria-label="Price"/>'
     +'<button class="iconbtn" onclick="removeItem('+i+')" aria-label="Remove">✕</button>';
   wrap.appendChild(row);
 
@@ -853,7 +794,11 @@ function buildItemEditBlock(it,i){
 }
 
 function editName(i,v){ state.menu[i].name=v; }
-function editPrice(i,v){ var n=parseFloat(v); state.menu[i].price=isNaN(n)?null:n; }
+function editPrice(i,v){
+  var n=parseFloat(v); state.menu[i].price=isNaN(n)?null:n;
+  var blk=$('editor').querySelector('.item-edit[data-idx="'+i+'"] .epr');
+  if(blk) blk.classList.toggle('epr-missing', state.menu[i].price==null);
+}
 function editDesc(i,v){ state.menu[i].desc=v; }
 function removeItem(i){ state.menu.splice(i,1); renderEditor(); }
 function addItem(sectionId){
@@ -938,6 +883,21 @@ var SITE = 'https://qr-code-ordering-r2x7.vercel.app';
 async function makeQR(){
   var clean=state.menu.filter(function(it){return it.name;});
   if(!clean.length){ alert('Add at least one menu item before generating a QR code.'); return; }
+
+  var missingIdx=-1;
+  for(var mi=0;mi<state.menu.length;mi++){
+    if(state.menu[mi].name&&state.menu[mi].price==null){ missingIdx=mi; break; }
+  }
+  if(missingIdx!==-1){
+    var missingBlk=$('editor').querySelector('.item-edit[data-idx="'+missingIdx+'"] .epr');
+    if(missingBlk){
+      missingBlk.classList.add('epr-missing');
+      missingBlk.scrollIntoView({behavior:'smooth', block:'center'});
+      missingBlk.focus();
+    }
+    alert('Add a price for "'+state.menu[missingIdx].name+'" (and any other items still showing in red) before generating your QR code.');
+    return;
+  }
 
   var btn=$('makeQrBtn');
   if(btn){ btn.disabled=true; btn.textContent='Saving your menu…'; }
