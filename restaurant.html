@@ -622,14 +622,14 @@ async function readMenuLocal(){
     var orderedLines;
     if(words.length<2){
       /* no usable word boxes at all — fall back to Tesseract's own line grouping as-is */
-      orderedLines=linesFromTesseractData(first.data, 0);
+      orderedLines=normalizeLineHeights(linesFromTesseractData(first.data, 0));
     }else{
       var regions=regionsFromWords(words);
       if(regions.length<=1){
         /* single region detected — already effectively one column, so Tesseract's own
            line grouping from the first pass is trustworthy; re-OCR'ing the same image
            again would just waste time for no accuracy gain */
-        orderedLines=linesFromTesseractData(first.data, 25);
+        orderedLines=normalizeLineHeights(linesFromTesseractData(first.data, 25));
       }else{
         var img=await loadImageFromState();
         /* Each crop IS a single column of variable-size text (a header plus item
@@ -639,11 +639,11 @@ async function readMenuLocal(){
         orderedLines=[];
         for(var ri=0;ri<regions.length;ri++){
           prog('Reading section '+(ri+1)+' of '+regions.length+'…', 60+Math.round((ri/regions.length)*35));
-          var bbox=regionBBox(regions[ri], 8, img.naturalWidth||img.width, img.naturalHeight||img.height);
+          var bbox=regionBBox(regions[ri], 16, img.naturalWidth||img.width, img.naturalHeight||img.height);
           if(bbox.x1<=bbox.x0||bbox.y1<=bbox.y0) continue;
           var cropUrl=cropToDataUrl(img,bbox);
           var cropRes=await worker.recognize(cropUrl);
-          orderedLines=orderedLines.concat(linesFromTesseractData(cropRes.data, 25));
+          orderedLines=orderedLines.concat(normalizeLineHeights(linesFromTesseractData(cropRes.data, 25)));
         }
       }
     }
@@ -867,8 +867,43 @@ function linesFromTesseractData(data, minConfidence){
     var t=(l.text||'').replace(/\s+$/,'').trim();
     if(!t) return null;
     if((l.confidence||0)<minConfidence && t.length<=2) return null;
-    return {text:t, h:(l.bbox?(l.bbox.y1-l.bbox.y0):0)};
+    /* The full LINE bbox height is corrupted by a dietary-icon graphic merged onto the
+       same line as the dish name — confirmed on a real photo: "pizza garlic bread"
+       (with a GF icon next to it) measured taller than the actual section headers on
+       the same page (icon graphics don't follow normal text x-height), which tricked
+       the header "big" heuristic into treating an ordinary dish name as a section.
+       A median over the line's individual WORD heights still isn't safe on a short
+       2-word line ("panino" + the icon) — the upper-middle value IS the contaminated
+       one there. The icon artifact only ever pushes height UP, never down (it's a
+       graphic, not shrunk text), so the MINIMUM word height in the line is the
+       reliable anti-contamination signal: real text words on one line are fairly
+       uniform in height, so the smallest is still representative of the actual text,
+       while the inflated icon outlier (whichever word it is) gets ignored. */
+    var h=l.bbox?(l.bbox.y1-l.bbox.y0):0;
+    if(l.words&&l.words.length){
+      h=l.words.reduce(function(min,w){ var wh=w.bbox.y1-w.bbox.y0; return Math.min(min,wh); }, Infinity);
+    }
+    return {text:t, h:h};
   }).filter(Boolean);
+}
+
+/* Each region/crop is OCR'd with its own, separate worker.recognize() call — and
+   Tesseract applies its own internal preprocessing per image (it normalizes for an
+   assumed DPI/text-size), so the raw pixel heights two DIFFERENT crops report are
+   not guaranteed to be on the same scale, even though the crops themselves are
+   lossless 1:1 extracts of the same original photo. Comparing absolute pixel
+   heights ACROSS crops to find "typicalH" (used everywhere a section header is
+   detected by being visually bigger) is therefore unreliable. Heights ARE reliably
+   comparable WITHIN one crop's own OCR result, though — so normalize each crop's
+   lines to a ratio relative to that crop's own local median height before
+   concatenating them into the merged line list. A line at the typical size for its
+   own crop ends up at ~1.0 regardless of which crop it came from; a genuinely
+   bigger header within its own crop still reads meaningfully above 1.0. */
+function normalizeLineHeights(lines){
+  var heights=lines.map(function(l){return l.h;}).filter(function(h){return h>0;}).sort(function(a,b){return a-b;});
+  var localTypical=heights.length?heights[Math.floor(heights.length/2)]:0;
+  if(!localTypical) return lines;
+  return lines.map(function(l){ return {text:l.text, h:l.h/localTypical}; });
 }
 
 function parseOcrToMenu(rawLines){
@@ -899,7 +934,19 @@ function parseOcrToMenu(rawLines){
      its own), which is the far more common real-menu use of the word. Only treat it as a
      section keyword when followed by a plural section-like noun (a genuine "Sharing
      Plates" / "Sharing Boards" heading still matches). */
-  var SEC_RE=/^(starters?|mains?|desserts?|drinks?|sides?|breakfast|brunch|lunch|dinner|snacks?|soups?|salads?|pizz[ae]s?|pasta|burgers?|specials?|cocktails?|wines?|beers?|soft\s+drinks?|hot\s+drinks?|appetiz|seafood|vegetarian|vegan|kids?|children|sharing\s+(plates?|platters?|boards?)|extras?|sauces?|antipasti|primi(\s+piatti)?|secondi(\s+piatti)?|contorni|dolci|risotti|insalate|calzoni|bevande|formaggi|le\s+arancine|frutti\s+di\s+mare|panini?|tostat[ao]|uova|grigliate|carni|pesc[ei]|zuppe|gelati|tapas|raciones|cicchetti|entr[ée]es?|plats?|fromages?|boissons?|entrantes|platos?|postres|bebidas|ensaladas)/i;
+  /* "frutti di mare", "panini?", and "tostat[ao]" removed — each confirmed colliding
+     with an actual DISH name on a real menu ("frutti di mare" a seafood lasagne,
+     "panino" a sandwich, "tostato" toasted bread), every one printed alone on its own
+     OCR line with nothing else, which is structurally indistinguishable from a genuine
+     header. Unlike "pizza garlic bread" or "side dishes" (extra words after the
+     keyword — catchable structurally, see isSec below), these have NO remaining text
+     to flag them as non-headers, and the menu's own visual styling didn't reliably
+     distinguish them either (measured no smaller than this menu's actual section
+     headers). Removing the keyword is the safe tradeoff — a menu that genuinely has a
+     "PANINI", "FRUTTI DI MARE", or "TOSTATI" *section* would still be caught by the
+     ALL-CAPS-and-visually-bigger shape fallback below, same as any other header
+     without a keyword match. */
+  var SEC_RE=/^(starters?|mains?|desserts?|drinks?|sides?|breakfast|brunch|lunch|dinner|snacks?|soups?|salads?|pizz[ae]s?|pasta|burgers?|specials?|cocktails?|wines?|beers?|soft\s+drinks?|hot\s+drinks?|appetiz|seafood|vegetarian|vegan|kids?|children|sharing\s+(plates?|platters?|boards?)|extras?|sauces?|antipasti|primi(\s+piatti)?|secondi(\s+piatti)?|contorni|dolci|risotti|insalate|calzoni|bevande|formaggi|le\s+arancine|uova|grigliate|carni|pesc[ei]|zuppe|gelati|tapas|raciones|cicchetti|entr[ée]es?|plats?|fromages?|boissons?|entrantes|platos?|postres|bebidas|ensaladas)/i;
   /* lines describing an add-on / swap / modifier for the dish above them, not a dish of their own —
      e.g. "AS A MAIN WITH CHIPS  16.95" under chicken wings is a size/serving option for that dish,
      not a separate menu item. "a?" tolerates OCR dropping the space before a short word
@@ -911,6 +958,12 @@ function parseOcrToMenu(rawLines){
   /* page-wide legend/disclaimer lines, not tied to any one section — e.g. a tag-abbreviation
      key ("V = Vegetarian") or an allergy notice, usually printed once at the bottom of the page */
   var MENU_NOTE_RE=/^[A-Z]{1,3}\s*=\s*\w+|food\s+allerg|intoleran|speak\s+to\s+(our\s+)?staff/i;
+  /* When the "photo" is actually a screenshot of a restaurant's website (confirmed —
+     that's literally what gets scanned in practice), browser/page furniture like the
+     cookie-consent banner gets captured in the same image and OCR'd right along with
+     the real menu. None of that is menu content — drop it outright rather than let it
+     become a stray item or note. */
+  var PAGE_NOISE_RE=/uses?\s+cookies|cookie\s+settings|we'?ll\s+assume\s+you'?re\s+ok|opt\s+out\s+if\s+you\s+wish/i;
   function xprice(t){
     var m=t.match(PRICE_RE);
     if(m){ var n=parseFloat((m[1]||m[2]).replace(',','.')); return(n>0&&n<999)?n:null; }
@@ -930,16 +983,44 @@ function parseOcrToMenu(rawLines){
      (confirmed — it's never a header, no matter how it's emphasized), so this exclusion
      has to run before EITHER detection path, not just block the keyword one. */
   var SEC_EXCLUDE_RE=/^as\s+a?\s*(main|starter|side|sharing|whole)\b|^sharing\s+(starter|plate|board)\b|^(to\s+share|for\s+sharing)\b|^serves?\s+\d/i;
-  /* A known keyword is trusted regardless of size. Otherwise (the all-caps/no-digit
-     shape alone) only counts as a header when the line is also visually bigger than
-     typical body text — or when there's no size signal at all (Tesseract gave no
-     word boxes), in which case we fall back to the old shape-only behaviour rather
-     than refuse to ever detect a header. */
+  /* Both detection paths below require the line to actually LOOK like a header
+     (visually bigger than typical body text) whenever size info is available —
+     confirmed on a real menu photo that trusting a keyword "regardless of size" is
+     a real bug, not just a theoretical risk: this exact menu has real dish names
+     that start with a section keyword as their first word — "pizza garlic bread"
+     (vs the section "PIZZE"), "frutti di mare" (a seafood lasagne dish, vs a
+     hypothetical "Frutti di Mare" section on some other menu), "side dishes" (a
+     sub-label, vs "Sides"), "panino" (vs "Panini"). Each one hijacked the section
+     grouping for every item after it. Falling back to "trust regardless of size"
+     only when there's no size signal at all (Tesseract gave no word boxes) keeps
+     the old behaviour as a last resort, not a default. */
   function isSec(l){
     var c=l.text.replace(/[-_=*•·]/g,'').trim();
     if(c.length<2||c.length>55||xprice(c)!==null) return false;
     if(SEC_EXCLUDE_RE.test(c)) return false;
-    if(SEC_RE.test(c)) return true;
+    /* Pure glyph/symbol noise (a misread icon) can slip past the all-caps/no-digit
+       shape check below if it happens to contain one stray real letter — e.g. "® O"
+       confirmed on a real photo. Require most of the non-space content to actually
+       be letters before treating ANY line as header-worthy, keyword or shape. */
+    var nonSpace=c.replace(/\s+/g,'');
+    if(nonSpace.length&&(c.match(/[A-Za-z]/g)||[]).length/nonSpace.length<0.6) return false;
+    /* A genuine section header is virtually always JUST the category name on its own
+       line — nothing else. Confirmed on a real photo that visual "bigger than body
+       text" size is NOT a reliable way to rule out a colliding dish name here: each
+       region is OCR'd as its own separate worker.recognize() call, and even after
+       normalizing per-region (see normalizeLineHeights) and using the minimum word
+       height in the line (to dodge a merged icon graphic inflating it), a real dish
+       name that happens to start with a keyword ("pizza garlic bread" vs "PIZZE",
+       "side dishes" vs "Sides") still measured at or above the same height as this
+       menu's actual headers — so size can't be trusted to rescue these. What DOES
+       work: requiring next-to-nothing left over once the matched keyword is removed.
+       "PIZZE" leaves nothing; "pizza garlic bread" leaves "garlic bread" — reject it
+       regardless of how it measured visually. */
+    var km=c.match(SEC_RE);
+    if(km){
+      var rest=c.slice(km[0].length).replace(/^[\s,.:;–—-]+/,'');
+      return rest.length<=2;
+    }
     /* shape-only fallback (no keyword match) is the riskier path — a long ALL-CAPS
        line is far more likely to be a misread description fragment than a genuine
        header (real section headers are almost always short, 1-4 words), so cap its
@@ -956,25 +1037,36 @@ function parseOcrToMenu(rawLines){
      dish name (a 'V' or 'GF' circle printed close enough to the text to be read as part
      of it) — strip them off the name and keep them as tags instead */
   var TAG_TOKEN_RE=/[\s,]*[\(\[]?\b(VG|GF|DF|VE|V)\b[\)\]]?\s*$/i;
-  /* A graphical dietary-icon badge (not text at all) OCRs as meaningless glyph noise —
-     confirmed on this menu's "vegetarian / can be made vegan on request" icon, which
-     consistently misreads as "Q®" every time it appears. This is a lookup of known
-     misreads, not a general fix: it's tied to exactly how THIS photo's icon rendered
-     through OCR and won't recognize the same icon in a different photo, different
-     resolution, or different font/compression — a different image would garble the
-     same icon into different noise. Only add entries here once confirmed consistent
-     within one photo. */
-  var GARBLED_BADGE_MAP=[
-    {re:/\s*Q\s*®\s*$/i, tags:['V','VG']}
-  ];
+  /* A graphical dietary-icon badge (not text at all) OCRs as meaningless glyph noise.
+     Confirmed against the real photo this menu was scanned from: it is NOT one
+     consistent garbled string — different instances of the same icon came back as
+     "Q@", "@", "(@", "()", "(3", "(j", ")", "(Q@®" depending on exact crop/context.
+     A fixed lookup of literal strings (the original approach, before this menu's full
+     ground truth was available) only ever catches a handful of these by luck. The
+     general signal that actually holds across all of them: real dish-name text never
+     ends in a short (<=4 char) fragment that's mostly non-alphabetic (symbols, digits,
+     a lone bracket) — only icon-misread noise does. Strip whatever matches that
+     shape, rather than only specific known strings.
+     What tag to assign for the stripped noise is still photo-specific, not generic:
+     this menu's own legend ("Dishes marked with [icon] can be made VEGAN on
+     request") confirms there is exactly one badge meaning here, so every instance of
+     this stripped noise safely maps to the same (V)(VG) — that would NOT be a safe
+     assumption on a menu using separate distinct V / VG / GF icons. */
+  var TRAILING_NOISE_RE=/\s*([\(\[]?[A-Za-z0-9®@]{0,3}[\)\]]?)\s*$/;
+  function looksLikeIconNoise(frag){
+    if(!frag) return false;
+    if(/[®@0-9]/.test(frag)) return true;                 // contains a symbol/digit — never real word-ending text
+    if(/^[\(\)\[\]]+$/.test(frag)) return true;            // bare stray bracket(s), e.g. ")" or "()"
+    if(/^[\(\[][A-Za-z]{0,2}[\)\]]?$/.test(frag)) return true; // bracket wrapping 0-2 letters, e.g. "(j", "(3)"-already covered above too
+    return false;
+  }
+  var ICON_NOISE_TAGS=['V','VG'];
   function extractTags(name){
     var tags=[], n=name, m;
-    for(var gi=0;gi<GARBLED_BADGE_MAP.length;gi++){
-      var gb=GARBLED_BADGE_MAP[gi];
-      if(gb.re.test(n)){
-        tags=tags.concat(gb.tags);
-        n=n.replace(gb.re,'').trim();
-      }
+    var nm=n.match(TRAILING_NOISE_RE);
+    if(nm&&nm[1]&&looksLikeIconNoise(nm[1])){
+      tags=tags.concat(ICON_NOISE_TAGS);
+      n=n.slice(0,nm.index).trim();
     }
     while(tags.length<4&&(m=n.match(TAG_TOKEN_RE))){
       tags.unshift(m[1].toUpperCase());
@@ -994,6 +1086,7 @@ function parseOcrToMenu(rawLines){
   function secMeta(name){ return sectionMeta[name]=sectionMeta[name]||{note:'',options:[]}; }
   while(i<lines.length){
     var line=lines[i], lt=line.text;
+    if(PAGE_NOISE_RE.test(lt)){ i++; continue; }
     if(isSec(line)){ sec=lt.replace(/[-_=*•·]/g,'').trim(); i++; continue; }
     if(MENU_NOTE_RE.test(lt)&&xprice(lt)===null){ menuNoteParts.push(lt); i++; continue; }
     if(isMod(line)){
