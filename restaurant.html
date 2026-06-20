@@ -459,9 +459,10 @@ async function readMenuLocal(){
       }
     });
     prog('Done — reviewing results', 100);
-    var text=linesInReadingOrder(result.data).join('\n');
-    if(!text||text.trim().length<5) throw new Error('no text');
-    var parsed=parseOcrToMenu(text);
+    var orderedLines=linesInReadingOrder(result.data);
+    var combinedLen=orderedLines.reduce(function(s,l){return s+(l.text||'').trim().length;},0);
+    if(combinedLen<5) throw new Error('no text');
+    var parsed=parseOcrToMenu(orderedLines);
     if(!parsed.items.length) throw new Error('no items');
     var sectionsRaw=Object.keys(parsed.sectionMeta).map(function(n){
       var m=parsed.sectionMeta[n]; return {name:n, note:m.note, options:m.options};
@@ -532,28 +533,50 @@ function detectColumnBoundary(rows){
       gaps.push({mid:(row[i].bbox.x0+row[i-1].bbox.x1)/2, size:row[i].bbox.x0-row[i-1].bbox.x1});
     }
     var bySize=gaps.slice().sort(function(a,b){return a.size-b.size;});
-    var median=bySize[Math.floor(bySize.length/2)].size;
     var biggest=bySize[bySize.length-1];
+    /* with only one gap (a 2-word row) there's nothing else in the row to compare it
+       against — the "is this gap unusually large relative to this row's other gaps"
+       check is undefined (the median would just equal the gap itself), so fall back
+       to the absolute-size threshold alone for that case */
+    if(bySize.length===1){
+      if(biggest.size>80) candidates.push({mid:biggest.mid, size:biggest.size});
+      return;
+    }
+    var median=bySize[Math.floor(bySize.length/2)].size;
     if(biggest.size>80&&biggest.size>Math.max(median*3,40)){
-      candidates.push(biggest.mid);
+      candidates.push({mid:biggest.mid, size:biggest.size});
     }
   });
-  if(candidates.length<2) return null;
-  candidates.sort(function(a,b){return a-b;});
+  if(!candidates.length) return null;
+  candidates.sort(function(a,b){return a.mid-b.mid;});
   var clusters=[[candidates[0]]];
   for(var i=1;i<candidates.length;i++){
     var lastCluster=clusters[clusters.length-1];
-    if(candidates[i]-lastCluster[lastCluster.length-1]<80) lastCluster.push(candidates[i]);
+    if(candidates[i].mid-lastCluster[lastCluster.length-1].mid<80) lastCluster.push(candidates[i]);
     else clusters.push([candidates[i]]);
   }
   clusters.sort(function(a,b){return b.length-a.length;});
   var best=clusters[0];
-  if(best.length<2) return null;
-  return best.reduce(function(s,v){return s+v;},0)/best.length;
+  /* normally require 2+ rows agreeing (the consensus that rules out ordinary
+     word-spacing being mistaken for a column gap). But a section that only has one
+     or two dishes per side won't have enough rows to ever reach that consensus —
+     since Y-banding has already isolated this into a small, low-risk region, a
+     single comfortably-large gap is trustworthy enough on its own there. */
+  if(best.length<2&&!(rows.length<=3&&best[0].size>=120)) return null;
+  return best.reduce(function(s,v){return s+v.mid;},0)/best.length;
 }
 
+/* Keep each reconstructed line's average word height alongside its text — section
+   headers are visually larger/bolder than body text on virtually every real menu,
+   which turns out to be necessary: dish descriptions are very often ALSO printed in
+   ALL CAPS (confirmed on the real menu this broke on), so letter-case alone can't
+   tell a genuine header apart from a same-case description line/fragment. */
 function rowsToText(rows){
-  return rows.map(function(row){ return row.map(function(w){return w.text;}).join(' '); });
+  return rows.map(function(row){
+    var text=row.map(function(w){return w.text;}).join(' ');
+    var totalH=0; row.forEach(function(w){ totalH+=(w.bbox.y1-w.bbox.y0); });
+    return {text:text, h:totalH/row.length};
+  });
 }
 
 function orderRegionWords(words, depth){
@@ -585,14 +608,48 @@ function detectYBands(rows){
   if(rows.length<2) return [rows];
   function rowCenter(row){ var s=0; row.forEach(function(w){s+=(w.bbox.y0+w.bbox.y1)/2;}); return s/row.length; }
   function rowHeight(row){ var s=0; row.forEach(function(w){s+=(w.bbox.y1-w.bbox.y0);}); return s/row.length; }
-  var centers=rows.map(rowCenter), heights=rows.map(rowHeight);
+  var centers=rows.map(rowCenter);
+  var heights=rows.map(rowHeight);
+  var sortedH=heights.slice().sort(function(a,b){return a-b;});
+  var typicalH=sortedH[Math.floor(sortedH.length/2)]||1;
+  /* A row in noticeably bigger/bolder text is almost certainly a header — and a
+     header is never split away from the content that follows it, no matter how wide
+     that gap looks numerically (headers conventionally get extra space above/below
+     them; that's normal typography, not a section boundary on its own). Exclude any
+     gap that immediately follows a header-sized row from band-break consideration
+     entirely, rather than try to numerically distinguish "header spacing" from
+     "section-break spacing" — they can't reliably be told apart by size alone. */
+  var isHeaderRow=heights.map(function(h){return h>=typicalH*1.15;});
+
   var gaps=[]; for(var i=1;i<rows.length;i++) gaps.push(centers[i]-centers[i-1]);
-  var sortedGaps=gaps.slice().sort(function(a,b){return a-b;});
-  var typical=sortedGaps[Math.floor(sortedGaps.length/2)]||1;
+  var eligible=[]; for(var i=0;i<gaps.length;i++){ if(!isHeaderRow[i]) eligible.push(gaps[i]); }
+
+  /* A fixed multiplier of the median gap can't work here either: how much wider a
+     genuine section-break gap looks relative to the median swings a lot depending on
+     how many tightly-wrapped lines happen to be in the mix (confirmed empirically —
+     a multiplier tuned for one menu's layout false-split a differently-proportioned
+     one and vice-versa). Instead find the biggest RATIO jump in the sorted gap sizes
+     — section breaks are categorically bigger than ordinary line spacing, so they
+     show up as an outlier jump in the distribution regardless of absolute scale. */
+  var cutoff=Infinity;
+  if(eligible.length>=2){
+    var sorted=eligible.slice().sort(function(a,b){return a-b;});
+    var bestRatio=1, bestIdx=-1;
+    for(var i=0;i<sorted.length-1;i++){
+      if(sorted[i]<=0) continue;
+      var ratio=sorted[i+1]/sorted[i];
+      if(ratio>bestRatio){ bestRatio=ratio; bestIdx=i; }
+    }
+    if(bestIdx>=0&&bestRatio>=1.8) cutoff=(sorted[bestIdx]+sorted[bestIdx+1])/2;
+  }else if(eligible.length===1){
+    /* nothing to compare the lone gap against — only trust an unambiguously large one */
+    cutoff=150;
+  }
+
   var bands=[[rows[0]]];
-  for(var i=1;i<rows.length;i++){
-    if(gaps[i-1]>Math.max(typical*2.2, heights[i]*1.8)) bands.push([rows[i]]);
-    else bands[bands.length-1].push(rows[i]);
+  for(var i=0;i<gaps.length;i++){
+    if(!isHeaderRow[i]&&gaps[i]>=cutoff) bands.push([rows[i+1]]);
+    else bands[bands.length-1].push(rows[i+1]);
   }
   return bands;
 }
@@ -602,7 +659,9 @@ function linesInReadingOrder(data){
   (data.words||[]).forEach(function(w){
     if(w&&w.text&&w.text.trim()&&w.bbox) words.push({text:w.text.trim(), bbox:w.bbox});
   });
-  if(words.length<2) return (data.text||'').split('\n');
+  /* no per-word bboxes available (shouldn't normally happen) — fall back to plain
+     text with no height signal; h:0 tells parseOcrToMenu it has no font-size info */
+  if(words.length<2) return (data.text||'').split('\n').map(function(l){return {text:l,h:0};});
 
   var bands=detectYBands(buildRows(words));
   var out=[];
@@ -613,10 +672,24 @@ function linesInReadingOrder(data){
   return out;
 }
 
-function parseOcrToMenu(raw){
-  var text=raw.replace(/\.{3,}/g,' ').replace(/_{3,}/g,' ').replace(/\|/g,'I')
-              .replace(/([£$€])O(\d)/g,'$10$2').replace(/([£$€])\s*l(\d)/g,'$11$2');
-  var lines=text.split('\n').map(function(l){return l.trim();}).filter(function(l){return l.length>1;});
+function parseOcrToMenu(rawLines){
+  /* rawLines: array of {text,h} from linesInReadingOrder (h = avg word height for
+     that line, 0 if unknown). Section headers are visually larger/bolder than body
+     text on virtually every real menu — and that turns out to be necessary, not
+     just nice-to-have: dish descriptions are very often ALSO printed in ALL CAPS
+     (confirmed on a real menu this broke on), so letter-case alone can't tell a
+     genuine header apart from a same-case description fragment. Compute the
+     "typical" (median) line height once and require headers detected only by
+     case+shape (not by a known keyword) to be meaningfully bigger than that. */
+  var heights=rawLines.map(function(l){return l.h;}).filter(function(h){return h>0;}).sort(function(a,b){return a-b;});
+  var typicalH=heights.length?heights[Math.floor(heights.length/2)]:0;
+
+  var lines=rawLines.map(function(l){
+    var t=(l.text||'').replace(/\.{3,}/g,' ').replace(/_{3,}/g,' ').replace(/\|/g,'I')
+            .replace(/([£$€])O(\d)/g,'$10$2').replace(/([£$€])\s*l(\d)/g,'$11$2').trim();
+    return {text:t, big:typicalH>0&&l.h>=typicalH*1.15};
+  }).filter(function(l){return l.text.length>1;});
+
   var PRICE_RE=/(?:[£$€¥₹])\s*(\d{1,3}(?:[.,]\d{1,2})?)|(\d{1,3}(?:[.,]\d{2}))\s*(?:[£$€])/;
   /* many real menus never print a currency symbol at all (it's implied once at the top) —
      trust a bare "12.50"-style number only when it's right-aligned at the end of the line,
@@ -631,19 +704,32 @@ function parseOcrToMenu(raw){
   /* page-wide legend/disclaimer lines, not tied to any one section — e.g. a tag-abbreviation
      key ("V = Vegetarian") or an allergy notice, usually printed once at the bottom of the page */
   var MENU_NOTE_RE=/^[A-Z]{1,3}\s*=\s*\w+|food\s+allerg|intoleran|speak\s+to\s+(our\s+)?staff/i;
-  function xprice(l){
-    var m=l.match(PRICE_RE);
+  function xprice(t){
+    var m=t.match(PRICE_RE);
     if(m){ var n=parseFloat((m[1]||m[2]).replace(',','.')); return(n>0&&n<999)?n:null; }
-    var b=l.match(BARE_PRICE_RE);
+    var b=t.match(BARE_PRICE_RE);
     if(b){ var n2=parseFloat(b[1].replace(',','.')); return(n2>=1&&n2<200)?n2:null; }
     return null;
   }
-  function strip(l){
-    var re=PRICE_RE.test(l)?PRICE_RE:BARE_PRICE_RE;
-    return l.replace(re,'').replace(/\s+/g,' ').replace(/^[\s\-–—·•.]+|[\s\-–—·•.]+$/g,'').trim();
+  function strip(t){
+    var re=PRICE_RE.test(t)?PRICE_RE:BARE_PRICE_RE;
+    return t.replace(re,'').replace(/\s+/g,' ').replace(/^[\s\-–—·•.]+|[\s\-–—·•.]+$/g,'').trim();
   }
-  function isSec(l){ var c=l.replace(/[-_=*•·]/g,'').trim(); if(c.length<2||c.length>55||xprice(c)!==null) return false; if(SEC_RE.test(c)) return true; if(c===c.toUpperCase()&&/[A-Z]/.test(c)&&!/\d/.test(c)) return true; return false; }
-  function isMod(l){ return MOD_RE.test(l.replace(/^[\s\-–—·•.]+/,'')); }
+  /* A known keyword is trusted regardless of size. Otherwise (the all-caps/no-digit
+     shape alone) only counts as a header when the line is also visually bigger than
+     typical body text — or when there's no size signal at all (Tesseract gave no
+     word boxes), in which case we fall back to the old shape-only behaviour rather
+     than refuse to ever detect a header. */
+  function isSec(l){
+    var c=l.text.replace(/[-_=*•·]/g,'').trim();
+    if(c.length<2||c.length>55||xprice(c)!==null) return false;
+    if(SEC_RE.test(c)) return true;
+    if(c===c.toUpperCase()&&/[A-Z]/.test(c)&&!/\d/.test(c)){
+      return typicalH>0 ? l.big : true;
+    }
+    return false;
+  }
+  function isMod(l){ return MOD_RE.test(l.text.replace(/^[\s\-–—·•.]+/,'')); }
   /* dietary/info badges that OCR sometimes picks up as literal trailing text next to a
      dish name (a 'V' or 'GF' circle printed close enough to the text to be read as part
      of it) — strip them off the name and keep them as tags instead */
@@ -656,16 +742,17 @@ function parseOcrToMenu(raw){
     }
     return {name:n, tags:tags};
   }
+  function at(idx){ return lines[idx]||{text:'',big:false}; }
   var items=[],sectionMeta={},menuNoteParts=[],sec='Menu',i=0;
   function secMeta(name){ return sectionMeta[name]=sectionMeta[name]||{note:'',options:[]}; }
   while(i<lines.length){
-    var line=lines[i];
-    if(isSec(line)){ sec=line.replace(/[-_=*•·]/g,'').trim(); i++; continue; }
-    if(MENU_NOTE_RE.test(line)&&xprice(line)===null){ menuNoteParts.push(line); i++; continue; }
+    var line=lines[i], lt=line.text;
+    if(isSec(line)){ sec=lt.replace(/[-_=*•·]/g,'').trim(); i++; continue; }
+    if(MENU_NOTE_RE.test(lt)&&xprice(lt)===null){ menuNoteParts.push(lt); i++; continue; }
     if(isMod(line)){
-      var op=xprice(line), onm=strip(line).replace(/^[+]\s*/,'');
+      var op=xprice(lt), onm=strip(lt).replace(/^[+]\s*/,'');
       if(onm.length>1){
-        if(SECTION_MOD_RE.test(line)){
+        if(SECTION_MOD_RE.test(lt)){
           var m=secMeta(sec);
           if(op!==null) m.options.push({name:onm,price:op});
           else m.note=(m.note?m.note+' · ':'')+onm;
@@ -677,15 +764,15 @@ function parseOcrToMenu(raw){
       }
       i++; continue;
     }
-    var p=xprice(line);
+    var p=xprice(lt);
     if(p!==null){
-      var nm=strip(line);
+      var nm=strip(lt);
       if(nm.length>1){
         /* descriptions often wrap across several OCR lines — keep pulling lines in
            until we hit the next price, section heading or modifier line */
-        var descParts=[]; var nx=lines[i+1]||'';
-        while(nx&&!isSec(nx)&&!isMod(nx)&&!MENU_NOTE_RE.test(nx)&&xprice(nx)===null&&nx.length>2&&descParts.length<4){
-          descParts.push(nx); i++; nx=lines[i+1]||'';
+        var descParts=[]; var nx=at(i+1);
+        while(nx.text&&!isSec(nx)&&!isMod(nx)&&!MENU_NOTE_RE.test(nx.text)&&xprice(nx.text)===null&&nx.text.length>2&&descParts.length<4){
+          descParts.push(nx.text); i++; nx=at(i+1);
         }
         var tg=extractTags(nm);
         items.push({name:tg.name,price:p,desc:descParts.join(' '),section:sec,tags:tg.tags,options:[]});
@@ -696,9 +783,9 @@ function parseOcrToMenu(raw){
        essentially just a price on its own (e.g. OCR split "Name" / "£5.50" across two
        lines) — if it's a self-contained "Name  £5.50" line, leave it for the next pass
        so we don't swallow a section header followed by an unrelated priced item */
-    var nextLine=lines[i+1]||'', np=xprice(nextLine);
-    if(np!==null&&strip(nextLine).length<=2&&!isSec(line)&&!isMod(line)&&line.length>1&&line.length<80){
-      var tg2=extractTags(line);
+    var nextLine=at(i+1), np=xprice(nextLine.text);
+    if(np!==null&&strip(nextLine.text).length<=2&&!isSec(line)&&!isMod(line)&&lt.length>1&&lt.length<80){
+      var tg2=extractTags(lt);
       items.push({name:tg2.name,price:np,desc:'',section:sec,tags:tg2.tags,options:[]}); i+=2; continue;
     }
     /* Some menus never print a price at all (e.g. "ask your server" / chalkboard-only
@@ -706,14 +793,14 @@ function parseOcrToMenu(raw){
        description styling: a normal mixed-case dish name line immediately followed by
        a long ALL-CAPS description line. Conservative on purpose (real length + caps
        requirements) so it doesn't start treating random text as dishes. */
-    if(!isSec(line)&&!isMod(line)&&line.length>1&&line.length<60&&line!==line.toUpperCase()){
-      var nx2=lines[i+1]||'';
-      var nx2Caps=nx2.replace(/[-_=*•·]/g,'').trim();
-      if(nx2Caps.length>15&&nx2Caps===nx2Caps.toUpperCase()&&/[A-Z]/.test(nx2Caps)&&!isSec(nx2)&&!isMod(nx2)&&xprice(nx2)===null){
-        var tg3=extractTags(line);
-        var descParts2=[nx2]; var k=i+2; var nx3=lines[k]||'';
-        while(nx3&&!isSec(nx3)&&!isMod(nx3)&&!MENU_NOTE_RE.test(nx3)&&xprice(nx3)===null&&nx3.length>2&&nx3===nx3.toUpperCase()&&descParts2.length<4){
-          descParts2.push(nx3); k++; nx3=lines[k]||'';
+    if(!isSec(line)&&!isMod(line)&&lt.length>1&&lt.length<60&&lt!==lt.toUpperCase()){
+      var nx2=at(i+1);
+      var nx2Caps=nx2.text.replace(/[-_=*•·]/g,'').trim();
+      if(nx2Caps.length>15&&nx2Caps===nx2Caps.toUpperCase()&&/[A-Z]/.test(nx2Caps)&&!isSec(nx2)&&!isMod(nx2)&&xprice(nx2.text)===null){
+        var tg3=extractTags(lt);
+        var descParts2=[nx2.text]; var k=i+2; var nx3=at(k);
+        while(nx3.text&&!isSec(nx3)&&!isMod(nx3)&&!MENU_NOTE_RE.test(nx3.text)&&xprice(nx3.text)===null&&nx3.text.length>2&&nx3.text===nx3.text.toUpperCase()&&descParts2.length<4){
+          descParts2.push(nx3.text); k++; nx3=at(k);
         }
         items.push({name:tg3.name,price:null,desc:descParts2.join(' '),section:sec,tags:tg3.tags,options:[]});
         i=k; continue;
