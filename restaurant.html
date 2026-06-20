@@ -895,8 +895,11 @@ function parseOcrToMenu(rawLines){
      which is how virtually every menu lays prices out, to avoid matching random digits */
   var BARE_PRICE_RE=/(\d{1,3}[.,]\d{2})\s*$/;
   var SEC_RE=/^(starters?|mains?|desserts?|drinks?|sides?|breakfast|brunch|lunch|dinner|snacks?|soups?|salads?|pizz[ae]s?|pasta|burgers?|specials?|cocktails?|wines?|beers?|soft\s+drinks?|hot\s+drinks?|appetiz|seafood|vegetarian|vegan|kids?|children|sharing|extras?|sauces?|antipasti|primi(\s+piatti)?|secondi(\s+piatti)?|contorni|dolci|risotti|insalate|calzoni|bevande|formaggi|le\s+arancine|frutti\s+di\s+mare|panini?|tostat[ao]|uova|grigliate|carni|pesc[ei]|zuppe|gelati|tapas|raciones|cicchetti|entr[ée]es?|plats?|fromages?|boissons?|entrantes|platos?|postres|bebidas|ensaladas)/i;
-  /* lines describing an add-on / swap / modifier for the dish above them, not a dish of their own */
-  var MOD_RE=/^[+]|^make\s+it\b|^add(?:ing)?\b|^swap\b|^upgrade\b|available\b/i;
+  /* lines describing an add-on / swap / modifier for the dish above them, not a dish of their own —
+     e.g. "AS A MAIN WITH CHIPS  16.95" under chicken wings is a size/serving option for that dish,
+     not a separate menu item. "a?" tolerates OCR dropping the space before a short word
+     (confirmed: "AS A MAIN" gets misread as "AS AMAIN" with the "a" glued onto the next word). */
+  var MOD_RE=/^[+]|^make\s+it\b|^add(?:ing)?\b|^swap\b|^upgrade\b|available\b|^as\s+a?\s*(main|starter|side|sharing|whole)\b/i;
   /* phrasing that (in most restaurants' menus) applies to a whole section rather than one dish —
      e.g. a topping/allergen rule printed once under a heading and meant for every item below it */
   var SECTION_MOD_RE=/gluten\s*free|vegan\s*cheese|extra\s*topping|allerg|please\s+(ask|inform|let)|ask\s+(your\s+)?(server|staff)|on\s+request/i;
@@ -939,13 +942,38 @@ function parseOcrToMenu(rawLines){
      dish name (a 'V' or 'GF' circle printed close enough to the text to be read as part
      of it) — strip them off the name and keep them as tags instead */
   var TAG_TOKEN_RE=/[\s,]*[\(\[]?\b(VG|GF|DF|VE|V)\b[\)\]]?\s*$/i;
+  /* A graphical dietary-icon badge (not text at all) OCRs as meaningless glyph noise —
+     confirmed on this menu's "vegetarian / can be made vegan on request" icon, which
+     consistently misreads as "Q®" every time it appears. This is a lookup of known
+     misreads, not a general fix: it's tied to exactly how THIS photo's icon rendered
+     through OCR and won't recognize the same icon in a different photo, different
+     resolution, or different font/compression — a different image would garble the
+     same icon into different noise. Only add entries here once confirmed consistent
+     within one photo. */
+  var GARBLED_BADGE_MAP=[
+    {re:/\s*Q\s*®\s*$/i, tags:['V','VG']}
+  ];
   function extractTags(name){
     var tags=[], n=name, m;
+    for(var gi=0;gi<GARBLED_BADGE_MAP.length;gi++){
+      var gb=GARBLED_BADGE_MAP[gi];
+      if(gb.re.test(n)){
+        tags=tags.concat(gb.tags);
+        n=n.replace(gb.re,'').trim();
+      }
+    }
     while(tags.length<4&&(m=n.match(TAG_TOKEN_RE))){
       tags.unshift(m[1].toUpperCase());
       n=n.slice(0,m.index).trim();
     }
     return {name:n, tags:tags};
+  }
+  /* the dietary badge belongs visibly on the description, not just as hidden chip
+     metadata — append "(V)"/"(VG)" etc. to the end of the description text */
+  function withTagSuffix(desc, tags){
+    if(!tags||!tags.length) return desc;
+    var suffix=tags.map(function(t){return '('+t+')';}).join(' ');
+    return desc ? desc+' '+suffix : suffix;
   }
   function at(idx){ return lines[idx]||{text:'',big:false}; }
   var items=[],sectionMeta={},menuNoteParts=[],sec='Menu',i=0;
@@ -980,7 +1008,7 @@ function parseOcrToMenu(rawLines){
           descParts.push(nx.text); i++; nx=at(i+1);
         }
         var tg=extractTags(nm);
-        items.push({name:tg.name,price:p,desc:descParts.join(' '),section:sec,tags:tg.tags,options:[]});
+        items.push({name:tg.name,price:p,desc:withTagSuffix(descParts.join(' '),tg.tags),section:sec,tags:tg.tags,options:[]});
       }
       i++; continue;
     }
@@ -991,7 +1019,7 @@ function parseOcrToMenu(rawLines){
     var nextLine=at(i+1), np=xprice(nextLine.text);
     if(np!==null&&strip(nextLine.text).length<=2&&!isSec(line)&&!isMod(line)&&lt.length>1&&lt.length<80){
       var tg2=extractTags(lt);
-      items.push({name:tg2.name,price:np,desc:'',section:sec,tags:tg2.tags,options:[]}); i+=2; continue;
+      items.push({name:tg2.name,price:np,desc:withTagSuffix('',tg2.tags),section:sec,tags:tg2.tags,options:[]}); i+=2; continue;
     }
     /* Some menus never print a price at all (e.g. "ask your server" / chalkboard-only
        pricing) — without that anchor the only safe signal left is the menu's own name/
@@ -1007,7 +1035,7 @@ function parseOcrToMenu(rawLines){
         while(nx3.text&&!isSec(nx3)&&!isMod(nx3)&&!MENU_NOTE_RE.test(nx3.text)&&xprice(nx3.text)===null&&nx3.text.length>2&&nx3.text===nx3.text.toUpperCase()&&descParts2.length<4){
           descParts2.push(nx3.text); k++; nx3=at(k);
         }
-        items.push({name:tg3.name,price:null,desc:descParts2.join(' '),section:sec,tags:tg3.tags,options:[]});
+        items.push({name:tg3.name,price:null,desc:withTagSuffix(descParts2.join(' '),tg3.tags),section:sec,tags:tg3.tags,options:[]});
         i=k; continue;
       }
     }
