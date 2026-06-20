@@ -894,7 +894,12 @@ function parseOcrToMenu(rawLines){
      trust a bare "12.50"-style number only when it's right-aligned at the end of the line,
      which is how virtually every menu lays prices out, to avoid matching random digits */
   var BARE_PRICE_RE=/(\d{1,3}[.,]\d{2})\s*$/;
-  var SEC_RE=/^(starters?|mains?|desserts?|drinks?|sides?|breakfast|brunch|lunch|dinner|snacks?|soups?|salads?|pizz[ae]s?|pasta|burgers?|specials?|cocktails?|wines?|beers?|soft\s+drinks?|hot\s+drinks?|appetiz|seafood|vegetarian|vegan|kids?|children|sharing|extras?|sauces?|antipasti|primi(\s+piatti)?|secondi(\s+piatti)?|contorni|dolci|risotti|insalate|calzoni|bevande|formaggi|le\s+arancine|frutti\s+di\s+mare|panini?|tostat[ao]|uova|grigliate|carni|pesc[ei]|zuppe|gelati|tapas|raciones|cicchetti|entr[ée]es?|plats?|fromages?|boissons?|entrantes|platos?|postres|bebidas|ensaladas)/i;
+  /* "sharing" alone is too ambiguous to trust as a section keyword — confirmed it false-
+     positives on "SHARING STARTER" (a per-dish serving-style descriptor, not a section of
+     its own), which is the far more common real-menu use of the word. Only treat it as a
+     section keyword when followed by a plural section-like noun (a genuine "Sharing
+     Plates" / "Sharing Boards" heading still matches). */
+  var SEC_RE=/^(starters?|mains?|desserts?|drinks?|sides?|breakfast|brunch|lunch|dinner|snacks?|soups?|salads?|pizz[ae]s?|pasta|burgers?|specials?|cocktails?|wines?|beers?|soft\s+drinks?|hot\s+drinks?|appetiz|seafood|vegetarian|vegan|kids?|children|sharing\s+(plates?|platters?|boards?)|extras?|sauces?|antipasti|primi(\s+piatti)?|secondi(\s+piatti)?|contorni|dolci|risotti|insalate|calzoni|bevande|formaggi|le\s+arancine|frutti\s+di\s+mare|panini?|tostat[ao]|uova|grigliate|carni|pesc[ei]|zuppe|gelati|tapas|raciones|cicchetti|entr[ée]es?|plats?|fromages?|boissons?|entrantes|platos?|postres|bebidas|ensaladas)/i;
   /* lines describing an add-on / swap / modifier for the dish above them, not a dish of their own —
      e.g. "AS A MAIN WITH CHIPS  16.95" under chicken wings is a size/serving option for that dish,
      not a separate menu item. "a?" tolerates OCR dropping the space before a short word
