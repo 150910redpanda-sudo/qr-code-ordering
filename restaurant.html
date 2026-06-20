@@ -489,52 +489,128 @@ async function readMenuLocal(){
    bottom, left column before right — generic for any number of columns,
    and harmless (falls back to plain top-to-bottom) for single-column menus.
    ============================================================ */
-/* Order a region's lines by detecting column gaps along x, then recurse into each
-   resulting column to look for further side-by-side sub-columns (e.g. a page split
-   into a left/right half, where one of those halves has a section whose own item
-   list is laid out as two short lists side by side). Depth-capped and only recurses
-   into regions with enough lines to plausibly contain real sub-structure, so normal
-   single-column text (where lines vary a bit in left-indent) isn't over-split. */
-function orderRegion(items, depth){
-  if(items.length<2) return items.slice();
-  var x0s=items.map(function(l){return l.bbox.x0;}).sort(function(a,b){return a-b;});
-  var maxX=Math.max.apply(null, items.map(function(l){return l.bbox.x1;}));
-  var totalWidth=maxX-x0s[0];
-  if(totalWidth<=0) return items.slice().sort(function(a,b){return a.bbox.y0-b.bbox.y0;});
-  var gapThreshold=Math.max(totalWidth*0.12, 60);
+/* Tesseract's own line/block grouping is NOT column-aware — confirmed empirically:
+   it merges same-row text across two side-by-side columns into one line whose bbox
+   spans the full width (e.g. "ANTIPASTI" at x0=20 and "PRIMI" at x0=450 on the same
+   row come back as a single Tesseract "line" object with text "ANTIPASTI PRIMI" and
+   bbox x0=20..525) — so reordering Tesseract's own lines can't undo that merge, the
+   information is already gone at the line level. Individual WORDS still carry correct
+   per-word positions, so reading order has to be rebuilt from words ourselves.
 
-  var boundaries=[];
-  for(var k=1;k<x0s.length;k++){
-    var gap=x0s[k]-x0s[k-1];
-    if(gap>gapThreshold) boundaries.push((x0s[k]+x0s[k-1])/2);
+   Clustering by each word's raw x-position is too fragile on its own — ordinary
+   word-spacing inside one dish's name/price can look exactly like a column gap to a
+   single-row check (confirmed: it split "Zuppa" off from "del giorno 5.50" as if they
+   were two columns). The fix is to require CONSENSUS: a column boundary only counts
+   if multiple different rows independently show an unusually wide gap at roughly the
+   same x position — one row's odd spacing is noise, several rows agreeing at the same
+   x is a real column edge. */
+function buildRows(words){
+  var withCenter=words.map(function(w){ return {w:w, cy:(w.bbox.y0+w.bbox.y1)/2, h:(w.bbox.y1-w.bbox.y0)}; });
+  withCenter.sort(function(a,b){ return a.cy-b.cy; });
+  var rows=[], cur=[withCenter[0]];
+  for(var i=1;i<withCenter.length;i++){
+    var item=withCenter[i];
+    var avgCy=cur.reduce(function(s,x){return s+x.cy;},0)/cur.length;
+    var avgH=cur.reduce(function(s,x){return s+x.h;},0)/cur.length;
+    if(Math.abs(item.cy-avgCy)<=avgH*0.6){ cur.push(item); }
+    else{ rows.push(cur); cur=[item]; }
   }
-  boundaries=boundaries.filter(function(b,idx){ return idx===0||b-boundaries[idx-1]>totalWidth*0.05; });
+  rows.push(cur);
+  return rows.map(function(row){
+    var ws=row.map(function(x){return x.w;});
+    ws.sort(function(a,b){return a.bbox.x0-b.bbox.x0;});
+    return ws;
+  });
+}
 
-  if(!boundaries.length){
-    return items.slice().sort(function(a,b){return a.bbox.y0-b.bbox.y0;});
+function detectColumnBoundary(rows){
+  var candidates=[];
+  rows.forEach(function(row){
+    if(row.length<2) return;
+    var gaps=[];
+    for(var i=1;i<row.length;i++){
+      gaps.push({mid:(row[i].bbox.x0+row[i-1].bbox.x1)/2, size:row[i].bbox.x0-row[i-1].bbox.x1});
+    }
+    var bySize=gaps.slice().sort(function(a,b){return a.size-b.size;});
+    var median=bySize[Math.floor(bySize.length/2)].size;
+    var biggest=bySize[bySize.length-1];
+    if(biggest.size>80&&biggest.size>Math.max(median*3,40)){
+      candidates.push(biggest.mid);
+    }
+  });
+  if(candidates.length<2) return null;
+  candidates.sort(function(a,b){return a-b;});
+  var clusters=[[candidates[0]]];
+  for(var i=1;i<candidates.length;i++){
+    var lastCluster=clusters[clusters.length-1];
+    if(candidates[i]-lastCluster[lastCluster.length-1]<80) lastCluster.push(candidates[i]);
+    else clusters.push([candidates[i]]);
   }
+  clusters.sort(function(a,b){return b.length-a.length;});
+  var best=clusters[0];
+  if(best.length<2) return null;
+  return best.reduce(function(s,v){return s+v;},0)/best.length;
+}
 
-  var cols=[]; for(var c=0;c<=boundaries.length;c++) cols.push([]);
-  items.forEach(function(l){
-    var idx=0; while(idx<boundaries.length&&l.bbox.x0>boundaries[idx]) idx++;
-    cols[idx].push(l);
-  });
+function rowsToText(rows){
+  return rows.map(function(row){ return row.map(function(w){return w.text;}).join(' '); });
+}
 
-  var out=[];
-  cols.forEach(function(col){
-    var ordered=(depth<3&&col.length>=6) ? orderRegion(col,depth+1) : col.slice().sort(function(a,b){return a.bbox.y0-b.bbox.y0;});
-    out=out.concat(ordered);
+function orderRegionWords(words, depth){
+  var rows=buildRows(words);
+  if(depth>=3||rows.length<2) return rowsToText(rows);
+
+  var boundary=detectColumnBoundary(rows);
+  if(boundary==null) return rowsToText(rows);
+
+  var leftWords=[], rightWords=[];
+  words.forEach(function(w){
+    var cx=(w.bbox.x0+w.bbox.x1)/2;
+    (cx<boundary?leftWords:rightWords).push(w);
   });
-  return out;
+  if(!leftWords.length||!rightWords.length) return rowsToText(rows);
+
+  return orderRegionWords(leftWords,depth+1).concat(orderRegionWords(rightWords,depth+1));
+}
+
+/* A single x-boundary derived from the WHOLE page is wrong once a page has more than
+   one column-pairing stacked vertically — e.g. "Antipasti | Primi" near the top and,
+   separately, a "Pizze" section lower down whose own item list happens to split into
+   two columns at a similar x position. Splitting by one global boundary would treat
+   Pizze's second column as a continuation of "Primi" just because they share an x
+   range. Fix: first cut the page into vertical bands wherever there's an unusually
+   large gap between consecutive rows (a section break), then run column detection
+   independently within each band — each band gets its own boundary decision. */
+function detectYBands(rows){
+  if(rows.length<2) return [rows];
+  function rowCenter(row){ var s=0; row.forEach(function(w){s+=(w.bbox.y0+w.bbox.y1)/2;}); return s/row.length; }
+  function rowHeight(row){ var s=0; row.forEach(function(w){s+=(w.bbox.y1-w.bbox.y0);}); return s/row.length; }
+  var centers=rows.map(rowCenter), heights=rows.map(rowHeight);
+  var gaps=[]; for(var i=1;i<rows.length;i++) gaps.push(centers[i]-centers[i-1]);
+  var sortedGaps=gaps.slice().sort(function(a,b){return a-b;});
+  var typical=sortedGaps[Math.floor(sortedGaps.length/2)]||1;
+  var bands=[[rows[0]]];
+  for(var i=1;i<rows.length;i++){
+    if(gaps[i-1]>Math.max(typical*2.2, heights[i]*1.8)) bands.push([rows[i]]);
+    else bands[bands.length-1].push(rows[i]);
+  }
+  return bands;
 }
 
 function linesInReadingOrder(data){
-  var raw=[];
-  (data.lines||[]).forEach(function(l){
-    if(l&&l.text&&l.text.trim()&&l.bbox) raw.push({text:l.text.replace(/\s+$/,''), bbox:l.bbox});
+  var words=[];
+  (data.words||[]).forEach(function(w){
+    if(w&&w.text&&w.text.trim()&&w.bbox) words.push({text:w.text.trim(), bbox:w.bbox});
   });
-  if(raw.length<2) return (data.text||'').split('\n');
-  return orderRegion(raw,0).map(function(l){return l.text;});
+  if(words.length<2) return (data.text||'').split('\n');
+
+  var bands=detectYBands(buildRows(words));
+  var out=[];
+  bands.forEach(function(band){
+    var bandWords=[]; band.forEach(function(row){ bandWords=bandWords.concat(row); });
+    out=out.concat(orderRegionWords(bandWords,0));
+  });
+  return out;
 }
 
 function parseOcrToMenu(raw){
