@@ -955,6 +955,37 @@ function parseOcrToMenu(rawLines){
   /* phrasing that (in most restaurants' menus) applies to a whole section rather than one dish —
      e.g. a topping/allergen rule printed once under a heading and meant for every item below it */
   var SECTION_MOD_RE=/gluten\s*free|vegan\s*cheese|extra\s*topping|allerg|please\s+(ask|inform|let)|ask\s+(your\s+)?(server|staff)|on\s+request/i;
+  /* A "VEGAN OPTION: <substitution>" sub-clause inside a dish's description block is a
+     per-dish swap, not body text — it belongs in that item's own options list (so it
+     renders with its own name/price row in the editor), not folded into the desc
+     paragraph as a sentence fragment. */
+  function extractItemOption(text){
+    var m=text.match(/(vegan|veggie|vegetarian)\s+option\s*:?\s*(.+)$/i);
+    if(!m||!m[2].trim()) return null;
+    return {name:m[1].charAt(0).toUpperCase()+m[1].slice(1).toLowerCase()+' option: '+m[2].trim(), price:null};
+  }
+  function splitDescAndOptions(parts){
+    var desc=[], opts=[];
+    parts.forEach(function(p){
+      var opt=extractItemOption(p);
+      if(opt) opts.push(opt); else desc.push(p);
+    });
+    return {desc:desc.join(' '), options:opts};
+  }
+  /* Requiring text===text.toUpperCase() to recognize an ALL-CAPS description line is
+     brittle against a single OCR misread — confirmed on a real photo: "...CHEESE, AI"
+     got read as "...CHEESE, Al" (capital A, LOWERCASE l — the classic OCR confusion
+     between I/l/1, which look near-identical in most fonts). That one stray lowercase
+     letter made the line fail the strict equality check, silently truncating the
+     description-continuation loop and leaving the rest of the sentence to be
+     misparsed as a brand new item. Tolerate a small fraction of miscased letters
+     instead of demanding a perfect match. */
+  function looksAllCaps(text){
+    var letters=text.match(/[A-Za-z]/g);
+    if(!letters||!letters.length) return false;
+    var lower=text.match(/[a-z]/g)||[];
+    return (lower.length/letters.length)<0.15;
+  }
   /* page-wide legend/disclaimer lines, not tied to any one section — e.g. a tag-abbreviation
      key ("V = Vegetarian") or an allergy notice, usually printed once at the bottom of the page */
   var MENU_NOTE_RE=/^[A-Z]{1,3}\s*=\s*\w+|food\s+allerg|intoleran|speak\s+to\s+(our\s+)?staff/i;
@@ -1148,8 +1179,9 @@ function parseOcrToMenu(rawLines){
         while(nx.text&&!isSec(nx)&&!isMod(nx)&&!MENU_NOTE_RE.test(nx.text)&&xprice(nx.text)===null&&nx.text.length>2&&descParts.length<4){
           descParts.push(nx.text); i++; nx=at(i+1);
         }
+        var so=splitDescAndOptions(descParts);
         var tg=extractTags(nm);
-        items.push({name:tg.name,price:p,desc:withTagSuffix(descParts.join(' '),tg.tags),section:sec,tags:tg.tags,options:[]});
+        items.push({name:tg.name,price:p,desc:withTagSuffix(so.desc,tg.tags),section:sec,tags:tg.tags,options:so.options});
       }
       i++; continue;
     }
@@ -1166,17 +1198,26 @@ function parseOcrToMenu(rawLines){
        pricing) — without that anchor the only safe signal left is the menu's own name/
        description styling: a normal mixed-case dish name line immediately followed by
        a long ALL-CAPS description line. Conservative on purpose (real length + caps
-       requirements) so it doesn't start treating random text as dishes. */
+       requirements) so it doesn't start treating random text as dishes. Confirmed on a
+       real photo this threshold was too strict: a genuine description line, "SHARING
+       STARTER", is exactly 15 characters and silently failed a ">15" check, causing
+       the dish itself ("pani cunzatu") to be dropped entirely with no item created at
+       all (everything after it just fell through unparsed, since none of the
+       all-caps continuation lines could pass the OUTER check either — they're not
+       mixed-case "name" candidates on their own). isSec/isMod/no-price already do the
+       real filtering here, so the length floor only needs to rule out single stray
+       words, not full short phrases. */
     if(!isSec(line)&&!isMod(line)&&lt.length>1&&lt.length<60&&lt!==lt.toUpperCase()){
       var nx2=at(i+1);
       var nx2Caps=nx2.text.replace(/[-_=*•·]/g,'').trim();
-      if(nx2Caps.length>15&&nx2Caps===nx2Caps.toUpperCase()&&/[A-Z]/.test(nx2Caps)&&!isSec(nx2)&&!isMod(nx2)&&xprice(nx2.text)===null){
+      if(nx2Caps.length>=8&&looksAllCaps(nx2Caps)&&!isSec(nx2)&&!isMod(nx2)&&xprice(nx2.text)===null){
         var tg3=extractTags(lt);
         var descParts2=[nx2.text]; var k=i+2; var nx3=at(k);
-        while(nx3.text&&!isSec(nx3)&&!isMod(nx3)&&!MENU_NOTE_RE.test(nx3.text)&&xprice(nx3.text)===null&&nx3.text.length>2&&nx3.text===nx3.text.toUpperCase()&&descParts2.length<4){
+        while(nx3.text&&!isSec(nx3)&&!isMod(nx3)&&!MENU_NOTE_RE.test(nx3.text)&&xprice(nx3.text)===null&&nx3.text.length>2&&looksAllCaps(nx3.text)&&descParts2.length<4){
           descParts2.push(nx3.text); k++; nx3=at(k);
         }
-        items.push({name:tg3.name,price:null,desc:withTagSuffix(descParts2.join(' '),tg3.tags),section:sec,tags:tg3.tags,options:[]});
+        var so2=splitDescAndOptions(descParts2);
+        items.push({name:tg3.name,price:null,desc:withTagSuffix(so2.desc,tg3.tags),section:sec,tags:tg3.tags,options:so2.options});
         i=k; continue;
       }
     }
